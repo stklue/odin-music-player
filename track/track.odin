@@ -4,6 +4,7 @@ DISABLE_DOCKING :: #config(DISABLE_DOCKING, true)
 
 import "core:fmt"
 import "core:os"
+import "core:strconv"
 import "core:strings"
 import image "vendor:stb/image"
 
@@ -14,21 +15,54 @@ import "../odin-imgui/imgui_impl_opengl3"
 import audio "audio_state"
 import "base:runtime"
 import "core:encoding/xml"
+import json "core:encoding/json"
 import "core:math"
 import "core:path/filepath"
 import "core:sync"
 import "core:thread"
 import "core:time"
 import pl "playlist"
+import ui "ui"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
 import ma "vendor:miniaudio"
 
+PlaybackState :: struct {
+	last_song_path:     string,
+	last_playlist_path: string,
+	volume:             f32,
+	playback_seconds:   f32,
+}
+
+// save_playback_state :: proc(filename: string, state: PlaybackState) -> bool {
+// 	data := json.write_string(state)
+// 	return save_to_file(filename, data)
+// }
+
+// read_playback_state :: proc(filename: string) -> PlaybackState {
+// 	result: PlaybackState
+
+// 	if !os.exists(filename) {
+// 		return result
+// 	}
+
+// 	content := read_from_file(filename)
+// 	success := json.read_string(content, &result)
+
+// 	if !success {
+// 		fmt.println("Failed to parse playback state")
+// 	}
+
+// 	return result
+// }
+
+
 FileEntry :: struct {
-	info:           os.File_Info,
-	name:           cstring,
-	fullpath:       cstring,
-	lowercase_name: string,
+	info:            os.File_Info,
+	name:            cstring,
+	fullpath:        cstring,
+	lowercase_name:  string,
+	index_all_songs: int,
 }
 
 // load files from playlist
@@ -134,27 +168,33 @@ load_texture_from_file :: proc(path: cstring) -> u32 {
 	return texture_id
 }
 
+// HasFileEntry :: union {FileEntry, nil} 
 
 AppState :: struct {
-	views:                   [100]bool,
-	current_view_index:      int,
-	mutex:                   sync.Mutex,
+	views:                      [100]bool,
+	current_view_index:         int,
+	mutex:                      sync.Mutex,
 	// current_song:
-	current_item_playing:    FileEntry,
-	is_searching:            bool,
+	current_item_playing:       Maybe(FileEntry),
+	is_searching:               bool,
 
 	// playlist
-	playlists:               [dynamic]pl.Playlist,
-	playlists_mutex:         sync.Mutex,
-	playlist_index:          int,
-	playlist_item_playling:  ^pl.Playlist_Entry,
-	all_songs_item_playling: FileEntry,
+	playlists:                  [dynamic]pl.Playlist,
+	// playlists_mutex:          sync.Mutex,
+	playlist_index:             int,
+	playlist_item_index:        int,
+	playlist_item_playling:     ^pl.Playlist_Entry,
+	// playlist_selection_mutex: sync.Mutex,
+	all_songs_item_playling:    FileEntry,
+	current_item_playing_index: int,
+	all_songs:                  [dynamic]FileEntry,
 }
 
 init_app :: proc() -> ^AppState {
 	state := new(AppState)
 	state.views[0] = true // default view should display
 	state.playlist_index = -1 // -1 = all the songs playlist
+	// state.all_songs_item_playling = nil
 	return state
 }
 
@@ -210,9 +250,9 @@ search_all_files :: proc(all_paths: ^[dynamic]FileEntry, dir: string) {
 			fullpath       = strings.clone_to_cstring(entry.fullpath),
 			lowercase_name = strings.to_lower(entry.name),
 		}
-		// if !entry.is_dir && strings.has_suffix(entry.name, ".mp3") {
+		if !entry.is_dir && strings.has_suffix(entry.name, ".mp3") {
 			append(all_paths, item)
-		// }
+		}
 
 		if entry.is_dir {
 			search_all_files(all_paths, path) // Recursively search
@@ -256,14 +296,25 @@ main :: proc() {
 	)
 
 	// init app state
-	root := "C:/Users/St.Klue/Music"
-	all_paths: [dynamic]FileEntry
+	app_state := init_app()
+	// Load saved state
+	// state := read_playback_state("playback_state.json")
+	// fmt.printf("Last played song: %s\n", state.last_song_path)
 
-	search_all_files(&all_paths, root)
-	fmt.printfln("Number  of files found: %d", len(all_paths))
+	// // Update state when song changes
+	// state.last_song_path = "music/cool_song.mp3"
+	// state.last_playlist_path = "playlists/favs.json"
+	// state.volume = 0.75
+	// state.playback_seconds = 42.3
+
+	// save_playback_state("playback_state.json", state)
+	root := "C:/Users/St.Klue/Music"
+	// all_paths: [dynamic]FileEntry
+
+	search_all_files(&app_state.all_songs, root)
+	fmt.printfln("Number  of files found: %d", len(app_state.all_songs))
 	play_texture := load_texture_from_file("C:/Projects/track_player/track/textures/play-50.png")
 	fmt.println("Texture loaded successfully: ", play_texture)
-	app_state := init_app()
 
 	//  init audio stuff
 	// global audio state
@@ -282,10 +333,10 @@ main :: proc() {
 		style.Colors[im.Col.WindowBg].w = 1
 	}
 
-	im.StyleColorsDark()
+	// im.StyleColorsDark()
 	// Set custom style
-	set_custom_style()
-
+	// set_custom_style()
+	ui.set_red_black_theme()
 	imgui_impl_glfw.InitForOpenGL(window, true)
 	defer imgui_impl_glfw.Shutdown()
 	imgui_impl_opengl3.Init("#version 150")
@@ -308,7 +359,7 @@ main :: proc() {
 	// loading playlists
 
 	playlists_thread := thread.create_and_start_with_poly_data2(
-		&app_state.playlists_mutex,
+		&app_state.mutex,
 		&app_state.playlists,
 		pl.load_all_zpl_playlists,
 	)
@@ -321,7 +372,6 @@ main :: proc() {
 	search_input: string
 	previous_input: string
 	filtered_results: [dynamic]FileEntry
-	current_view_item: i32 = 0
 	current_pl_item: i32 = 0 // pl = playlist
 	current_sr_item: i32 = 0 // sr = search results
 	is_selected := false
@@ -383,6 +433,14 @@ main :: proc() {
 			im.SetNextWindowSize(im.Vec2{third_w, top_h})
 
 			cstring_buffer := cast(cstring)(&my_buffer[0])
+			im.PushStyleColor(im.Col.ScrollbarBg, color_vec4_to_u32({0.5, 0.1, 0.1, 1}))
+			im.PushStyleColor(im.Col.ScrollbarGrab, color_vec4_to_u32({0.9, 0.3, 0.3, 1}))
+			im.PushStyleColor(im.Col.ScrollbarGrabHovered, color_vec4_to_u32({0.9, 0.2, 0.2, 1}))
+			im.PushStyleColor(im.Col.ScrollbarGrabActive, color_vec4_to_u32({0.9, 0.25, 0.25, 1}))
+			im.PushStyleColor(im.Col.ChildBg, color_vec4_to_u32({0.9, 0.25, 0.25, 1}))
+			style := im.GetStyle()
+			style.ChildRounding = 10
+			// style.WindowRounding = 40
 			if im.Begin("##top-left", nil, {.NoTitleBar, .NoResize}) {
 				if im.InputText("Search", cstring_buffer, 100) {
 
@@ -390,27 +448,27 @@ main :: proc() {
 					thread.create_and_start_with_poly_data5(
 						app_state,
 						strings.clone_from_cstring(cstring_buffer),
-						&all_paths,
+						&app_state.all_songs,
 						&search_results,
 						&search_mutex,
 						search_song,
 					)
 				}
-				sync.mutex_lock(&app_state.playlists_mutex)
+				sync.mutex_lock(&app_state.mutex)
 
 				size := im.GetContentRegionAvail()
 				im.BeginChild("##list-region", size, {.AutoResizeX}) // border=true
 
 				if im.Button("All Songs", {third_w, 0}) {
-					// sync.mutex_lock(&app_state.mutex)
-					// app_state.playlist_index = -1
-					// sync.mutex_unlock(&app_state.mutex)
+					// sync.mutex_lock(&app_state.m)
+					app_state.playlist_index = -1
+					// sync.mutex_unlock(&app_state.playlist_selection_mutex)
 
 
 					//! TODO: SHOULD CHANGE THE FILES PROC TO BE THE ALL FILES PROC 
 					thread.create_and_start_with_poly_data2(
 						&shared_files_mutex,
-						&all_paths,
+						&app_state.all_songs,
 						load_files_thread_proc,
 					)
 				}
@@ -421,9 +479,17 @@ main :: proc() {
 				if len(cstring_buffer) == 0 {
 					for v, i in app_state.playlists {
 						currently_selected_playlist := current_pl_item == cast(i32)i
+						// if app_state.playlist_index == -1 {
 
+						// } else {
+
+						// }
+						// app_state.playlist_item_playling
 
 						// Start a group per row
+						// im.PushStyleColor(im.Col.Sele, 0) // transparent button bg
+						// im.PushStyleColor(im.PushStyleColor(im.Col.im, color_vec4_to_u32({0.9, 0.3, 0.3, 1})).Col.ButtonActive, 0) // transparent active
+
 						im.BeginGroup()
 						im.Dummy(im.Vec2{20, 20})
 						im.SameLine()
@@ -436,12 +502,14 @@ main :: proc() {
 							current_pl_item = cast(i32)i
 
 							// sync.mutex_lock(&app_state.mutex)
-							// app_state.playlist_index = i
+							// sync.mutex_lock(&app_state.playlist_selection_mutex)
+							app_state.playlist_index = i
+							// sync.mutex_unlock(&app_state.playlist_selection_mutex)
 							// sync.mutex_unlock(&app_state.mutex)
 
 							thread.create_and_start_with_poly_data4(
 								&shared_files_mutex,
-								&all_paths,
+								&app_state.all_songs,
 								i,
 								&app_state.playlists,
 								load_files_from_pl_thread,
@@ -465,6 +533,10 @@ main :: proc() {
 								{size.x, 30},
 							) {
 								current_sr_item = cast(i32)i
+								// app_state.current_item_playing_index = i
+								// fmt.println(app_state.current_item_playing_index)
+								// fmt.println(i)
+
 								audio.create_audio_play_thread(audio_state, search_result.fullpath)
 							}
 
@@ -474,17 +546,17 @@ main :: proc() {
 					}
 				}
 				im.EndChild()
-				sync.mutex_unlock(&app_state.playlists_mutex)
+				sync.mutex_unlock(&app_state.mutex)
 			}
 			im.End()
+			im.PopStyleColor(5)
 
 			// Top Right
 			top_right_panel(
 				&shared_files_mutex,
-				&all_paths,
+				&app_state.all_songs,
 				audio_state,
 				app_state,
-				current_view_item,
 				top_h,
 				third_w,
 				right_w,
@@ -708,10 +780,12 @@ audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	handle_x := p0.x + progress_width * value
 	handle_radius: f32 = active || hovered ? 7.0 : 5.0
 
-	col_bg := im.GetColorU32(.FrameBg)
-	col_fg := im.GetColorU32(.PlotHistogram)
+	col_bg := color_vec4_to_u32({0.5, 0.1, 0.1, 1})
+	// col_bg :=    im.GetColorU32(.FrameBg)
+	col_fg := color_vec4_to_u32({0.8, 0.25, 0.25, 1})
 	col_border := im.GetColorU32(.Border)
-	col_handle := im.GetColorU32(.Text)
+	// col_handle := im.GetColorU32(.Text)
+	col_handle := color_vec4_to_u32({0.9, 0.3, 0.3, 1})
 
 	im.DrawList_AddRectFilled(draw_list, p0, p1, col_bg)
 	im.DrawList_AddRectFilled(draw_list, p0, im.Vec2{handle_x, p1.y}, col_fg)
@@ -775,6 +849,14 @@ audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	im.PopID()
 }
 
+Vec4 :: [4]f32
+color_vec4_to_u32 :: proc(c: Vec4) -> u32 {
+	r := cast(u32)(c.x * 255.0)
+	g := cast(u32)(c.y * 255.0)
+	b := cast(u32)(c.z * 255.0)
+	a := cast(u32)(c.w * 255.0)
+	return (a << 24) | (b << 16) | (g << 8) | r
+}
 
 top_left_panel :: proc() {
 
@@ -784,7 +866,6 @@ top_right_panel :: proc(
 	all_paths: ^[dynamic]FileEntry,
 	audio_state: ^audio.AudioState,
 	app_state: ^AppState,
-	current_view_item: i32,
 	top_h, third_w, right_w: f32,
 ) {
 	im.SetNextWindowPos(im.Vec2{third_w, 0})
@@ -806,20 +887,23 @@ top_right_panel :: proc(
 		im.BeginChild("ListRegion", size) // border=true
 
 		for v, i in all_paths {
-			currently_selected := current_view_item == cast(i32)i
+			is_selected := app_state.current_item_playing_index == i
 
-			// Start a group per row
 			im.BeginGroup()
 			im.Spacing()
-			if im.Selectable(v.name, currently_selected, {}, {size.x, 30}) {
-				fmt.printf("Playing: %s\n", v.name)
-				set_current_item(app_state, v)
-				sync.mutex_lock(&app_state.mutex)
-				// if app_state.playlist_index == -1 {
-				app_state.all_songs_item_playling = v
 
+			bg := color_vec4_to_u32({0.9, 0.2, 0.2, 1})
+
+			if CustomSelectable(v.name, is_selected, bg, {}, im.Vec2{size.x, 30}) {
+				fmt.printf("[App] Playing: %s\n", v.name)
+				fmt.println(i, app_state.current_item_playing_index, is_selected)
+				set_current_item(app_state, v)
+
+				sync.mutex_lock(&app_state.mutex)
+				app_state.all_songs_item_playling = v
+				app_state.current_item_playing_index = i
 				sync.mutex_unlock(&app_state.mutex)
-				// Launch playback in a separate thread to keep UI responsive
+
 				audio.create_audio_play_thread(audio_state, v.fullpath)
 			}
 
@@ -842,7 +926,7 @@ bottom_panel :: proc(
 	im.SetNextWindowSize(im.Vec2{screen_w, third_h})
 	if im.Begin("##bottom", nil, {.NoTitleBar, .NoResize}) {
 		im.PushStyleColor(im.Col.Button, 0) // transparent button bg
-		im.PushStyleColor(im.Col.ButtonHovered, 0) // transparent hover
+		im.PushStyleColor(im.Col.ButtonHovered, color_vec4_to_u32({0.9, 0.3, 0.3, 1})) // transparent hover
 		im.PushStyleColor(im.Col.ButtonActive, 0) // transparent active
 		// im.PushStyleVarY
 		// if im.ImageButton(
@@ -868,7 +952,16 @@ bottom_panel :: proc(
 		// Move cursor to horizontal center
 		im.SetCursorPosX(im.GetCursorPosX() + offset_x)
 		if im.Button("Prev") {
-			audio.toggle_playback(audio_state)
+			prev_path_index :=
+				app_state.current_item_playing_index - 1 >= 0 ? app_state.current_item_playing_index - 1 : 0
+			app_state.all_songs_item_playling = app_state.all_songs[prev_path_index]
+			audio.create_audio_play_thread(
+				audio_state,
+				app_state.all_songs[prev_path_index].fullpath,
+			)
+			sync.mutex_lock(&app_state.mutex)
+			app_state.current_item_playing_index = prev_path_index
+			sync.mutex_unlock(&app_state.mutex)
 		}
 
 		im.SameLine()
@@ -881,7 +974,16 @@ bottom_panel :: proc(
 
 		// Stop button
 		if im.Button("Next") {
-			audio.stop_playback(audio_state)
+			next_path_index :=
+				app_state.current_item_playing_index + 1 >= len(app_state.all_songs) ? app_state.current_item_playing_index : app_state.current_item_playing_index + 1
+			app_state.all_songs_item_playling = app_state.all_songs[next_path_index]
+			audio.create_audio_play_thread(
+				audio_state,
+				app_state.all_songs[next_path_index].fullpath,
+			)
+			sync.mutex_lock(&app_state.mutex)
+			app_state.current_item_playing_index = next_path_index
+			sync.mutex_unlock(&app_state.mutex)
 		}
 		im.SameLine()
 
@@ -895,17 +997,60 @@ bottom_panel :: proc(
 
 		audio_progress_bar_and_volume_bar(audio_state)
 
-		// fmt.println("This is the item: ", app_state.all_songs_item_playling)
+		im.Dummy({0, 20})
+		im.Text(
+			len(app_state.all_songs_item_playling.name) == 0 ? "" : app_state.all_songs_item_playling.name,
+		)
 
-		// show track info
-		if len(app_state.all_songs_item_playling.lowercase_name) > 0 {
-			im.Dummy({0, 20})
-			im.Text(
-				app_state.playlist_index == -1 ? app_state.all_songs_item_playling.name : text(app_state.playlist_item_playling.albumTitle),
-			)
-		}
 
 	}
 	im.End()
 
+}
+
+
+SelectableColor :: proc(bg_color: u32) {
+	dl := im.GetWindowDrawList()
+	min := im.GetItemRectMin()
+	max := im.GetItemRectMax()
+	im.DrawList_AddRectFilled(dl, min, max, bg_color, 0.0)
+}
+
+CustomSelectable :: proc(
+	label: cstring,
+	selected: bool,
+	bg_color: u32,
+	flags: im.SelectableFlags,
+	size: im.Vec2,
+) -> bool {
+	draw_list := im.GetWindowDrawList()
+	im.DrawList_ChannelsSplit(draw_list, 2)
+
+	// Foreground
+	im.DrawList_ChannelsSetCurrent(draw_list, 1)
+	im.Dummy({0, 10})
+	im.Dummy({10, 0})
+	im.SameLine()
+	result := im.Selectable(label, selected, flags, size)
+
+	// Background
+	im.DrawList_ChannelsSetCurrent(draw_list, 0)
+
+	// padding := im.Vec2{10, 4}       // padding around the selectable box
+	rounding: f32 = 6.0            // corner radius
+
+	min := im.GetItemRectMin()
+	max := im.GetItemRectMax() 
+
+	color := bg_color
+	if selected {
+		color = color_vec4_to_u32({0.9, 0.3, 0.3, 1.0})
+	} else if im.IsItemHovered() {
+		color = color_vec4_to_u32({0.9, 0.2, 0.1, 1.0})
+	}
+
+	im.DrawList_AddRectFilled(draw_list, min, max, color, rounding)
+
+	im.DrawList_ChannelsMerge(draw_list)
+	return result
 }

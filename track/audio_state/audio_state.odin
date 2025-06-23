@@ -354,18 +354,6 @@ update_audio :: proc(state: ^AudioState) {
 		// ma.decoder_seek_to_pcm_frame(state.decoder, 0)
 	}
 }
-// update_audio_X :: proc(state: ^AudioState) {
-
-// 	// Check if song has ended
-// 	if state.is_playing && state.current_time >= state.duration {
-
-// 		if state.repeat {
-// 		} else {
-// 			fmt.println("⏭️ Playing next song...")
-// 			play_next_song(state)
-// 		}
-// 	}
-// }
 
 
 create_audio_play_thread :: proc(state: ^AudioState, path: cstring) {
