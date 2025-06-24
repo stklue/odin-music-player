@@ -1,5 +1,6 @@
 package ui
 
+
 import "core:fmt"
 import "core:os"
 import "core:strconv"
@@ -67,7 +68,7 @@ top_right_panel :: proc(
 
 			bg := color_vec4_to_u32({0.9, 0.2, 0.2, 1})
 
-			if CustomSelectable(v.name, is_selected, bg, {}, im.Vec2{size.x, 30}) {
+			if CustomSelectable(v.name, is_selected, 0, {}, {size.x, 30}, {50, 10}) {
 				fmt.printf("[App] Playing: %s\n", v.name)
 				fmt.println(i, app_state.current_item_playing_index, is_selected)
 				// set_current_item(app_state, v)

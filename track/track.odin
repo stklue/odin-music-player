@@ -12,10 +12,11 @@ import im "../odin-imgui"
 import "../odin-imgui/imgui_impl_glfw"
 import "../odin-imgui/imgui_impl_opengl3"
 
+import app "app"
 import audio "audio_state"
 import "base:runtime"
-import "core:encoding/xml"
 import json "core:encoding/json"
+import "core:encoding/xml"
 import "core:math"
 import "core:path/filepath"
 import "core:sync"
@@ -26,11 +27,10 @@ import ui "ui"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
 import ma "vendor:miniaudio"
-import app "app"
-
 
 
 main :: proc() {
+	// ============== OPENGL AND GLFW INIT ===============================
 	assert(cast(bool)glfw.Init())
 	defer glfw.Terminate()
 
@@ -51,12 +51,14 @@ main :: proc() {
 		(cast(^rawptr)p)^ = glfw.GetProcAddress(name)
 	})
 
+
+	// ============== APP STATE AND IM GUI SETUP ===============================
 	im.CHECKVERSION()
 	im.CreateContext()
 	defer im.DestroyContext()
 	io := im.GetIO()
 
-	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad} // io.Fonts->AddFontFromFileTTF("fonts/Roboto-Medium.ttf", 16.0f);
+	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad}
 	im.FontAtlas_AddFontFromFileTTF(
 		io.Fonts,
 		"C:/Projects/track_player/track/fonts/Roboto/Roboto-VariableFont_wdth,wght.ttf",
@@ -77,7 +79,6 @@ main :: proc() {
 
 	// save_playback_state("playback_state.json", state)
 	root := "C:/Users/St.Klue/Music"
-	// all_paths: [dynamic]app.FileEntry
 
 	app.search_all_files(&app_state.all_songs, root)
 	fmt.printfln("Number  of files found: %d", len(app_state.all_songs))
@@ -99,9 +100,6 @@ main :: proc() {
 		style.Colors[im.Col.WindowBg].w = 1
 	}
 
-	// im.StyleColorsDark()
-	// Set custom style
-	// set_custom_style()
 	ui.set_red_black_theme()
 	imgui_impl_glfw.InitForOpenGL(window, true)
 	defer imgui_impl_glfw.Shutdown()
@@ -151,6 +149,17 @@ main :: proc() {
 		im.NewFrame()
 
 
+		viewport := im.GetMainViewport()
+		screen_w := io.DisplaySize.x
+		screen_h := io.DisplaySize.y
+
+		third_w := screen_w / 4
+		third_h := screen_h / 6
+
+		top_h := screen_h - third_h // top 2/3 of height
+		right_w := screen_w - third_w // right 2/3 of width
+
+
 		// Update audio state
 		audio.update_audio(audio_state)
 
@@ -178,58 +187,67 @@ main :: proc() {
 			}
 		}
 
-		viewport := im.GetMainViewport()
-		screen_w := io.DisplaySize.x
-		screen_h := io.DisplaySize.y
-
-		third_w := screen_w / 4
-		third_h := screen_h / 6
-
-		top_h := screen_h - third_h // top 2/3 of height
-		right_w := screen_w - third_w // right 2/3 of width
 
 		im.PushStyleVar(im.StyleVar.WindowRounding, 0)
 		im.PushStyleVar(im.StyleVar.WindowBorderSize, 0)
 		// main window 
 		im.SetNextWindowPos(im.Vec2{0, 0}, .Appearing)
 		im.SetNextWindowSize(viewport.Size, .Appearing)
-		if im.Begin("Track Player", nil, {.NoResize, .NoCollapse, .NoMove, .MenuBar}) {
+		if im.Begin("##track-player", nil, {.NoResize, .NoCollapse, .NoMove, .MenuBar}) {
 			// Top Left
 			im.SetNextWindowPos(im.Vec2{0, 0})
 			im.SetNextWindowSize(im.Vec2{third_w, top_h})
 
-			cstring_buffer := cast(cstring)(&my_buffer[0])
-			im.PushStyleColor(im.Col.ScrollbarBg, ui.color_vec4_to_u32({0.5, 0.1, 0.1, 1}))
-			im.PushStyleColor(im.Col.ScrollbarGrab, ui.color_vec4_to_u32({0.9, 0.3, 0.3, 1}))
-			im.PushStyleColor(im.Col.ScrollbarGrabHovered, ui.color_vec4_to_u32({0.9, 0.2, 0.2, 1}))
-			im.PushStyleColor(im.Col.ScrollbarGrabActive, ui.color_vec4_to_u32({0.9, 0.25, 0.25, 1}))
-			im.PushStyleColor(im.Col.ChildBg, ui.color_vec4_to_u32({0.9, 0.25, 0.25, 1}))
+			// cstring_buffer := cast(cstring)(&my_buffer[0])
+			// if selected {
+			// 	color = color_vec4_to_u32({0.8, 0.2, 0.6, 0.35})
+			// } else if is_hovered {
+			// 	color = color_vec4_to_u32({0.6, 0.1, 0.4, 0.25})
+			// } else {
+			// 	color = color_vec4_to_u32({0.5, 0.0, 0.3, 0.15})
+			// }
+
+			im.PushStyleColor(im.Col.ScrollbarBg, ui.color_vec4_to_u32({0.2, 0.0, 0.2, 0.25})) // dim purple
+			im.PushStyleColor(im.Col.ScrollbarGrab, ui.color_vec4_to_u32({0.5, 0.1, 0.5, 0.35})) // soft purple grab
+			im.PushStyleColor(
+				im.Col.ScrollbarGrabHovered,
+				ui.color_vec4_to_u32({0.7, 0.2, 0.7, 0.45}),
+			) // bright hover glow
+			im.PushStyleColor(
+				im.Col.ScrollbarGrabActive,
+				ui.color_vec4_to_u32({0.9, 0.3, 0.9, 0.55}),
+			) // vivid active magenta
+
 			style := im.GetStyle()
 			style.ChildRounding = 10
 			// style.WindowRounding = 40
 			if im.Begin("##top-left", nil, {.NoTitleBar, .NoResize}) {
-				if im.InputText("Search", cstring_buffer, 100) {
+				im.Dummy({0, 20})
+				offset_x: f32 = 35
+				size := im.GetContentRegionAvail()
+				ui.CustomSearchBar("##search-bar", &my_buffer, {size.x - offset_x, 40})
 
-					// search on each key press
+				if im.IsItemEdited() {
 					thread.create_and_start_with_poly_data5(
 						app_state,
-						strings.clone_from_cstring(cstring_buffer),
+						strings.clone_from_cstring(cast(cstring)(&my_buffer[0])),
 						&app_state.all_songs,
 						&search_results,
 						&search_mutex,
 						app.search_song,
 					)
 				}
+				// im.Text(cast(cstring)(&my_buffer[0]))
+				// if im.InputText("Search", cstring_buffer, 100) {
+
+				// }
 				sync.mutex_lock(&app_state.mutex)
 
-				size := im.GetContentRegionAvail()
+
 				im.BeginChild("##list-region", size, {.AutoResizeX}) // border=true
-
-				if im.Button("All Songs", {third_w, 0}) {
-					// sync.mutex_lock(&app_state.m)
+				im.Dummy({0, 30})
+				if ui.CustomButton("All Songs", {}, {size.x - offset_x, 30}, {10, 10}) {
 					app_state.playlist_index = -1
-					// sync.mutex_unlock(&app_state.playlist_selection_mutex)
-
 
 					//! TODO: SHOULD CHANGE THE FILES PROC TO BE THE ALL FILES PROC 
 					thread.create_and_start_with_poly_data2(
@@ -242,7 +260,7 @@ main :: proc() {
 				im.Separator()
 
 				// Show searches or the the initial playlist items
-				if len(cstring_buffer) == 0 {
+				if len(cast(cstring)(&my_buffer[0])) == 0 {
 					for v, i in app_state.playlists {
 						currently_selected_playlist := current_pl_item == cast(i32)i
 						// if app_state.playlist_index == -1 {
@@ -256,14 +274,16 @@ main :: proc() {
 						// im.PushStyleColor(im.Col.Sele, 0) // transparent button bg
 						// im.PushStyleColor(im.PushStyleColor(im.Col.im, ui.color_vec4_to_u32({0.9, 0.3, 0.3, 1})).Col.ButtonActive, 0) // transparent active
 
-						im.BeginGroup()
-						im.Dummy(im.Vec2{20, 20})
-						im.SameLine()
-						if im.Selectable(
+						// im.BeginGroup()
+						// im.Dummy(im.Vec2{20, 20})
+						// im.SameLine()
+						if ui.CustomSelectable(
 							strings.clone_to_cstring(v.meta.title),
 							currently_selected_playlist,
+							1,
 							{},
-							{size.x, 30},
+							{size.x - offset_x, 30},
+							{10, 10},
 						) {
 							current_pl_item = cast(i32)i
 
@@ -283,7 +303,7 @@ main :: proc() {
 						}
 
 
-						im.EndGroup()
+						// im.EndGroup()
 					}
 				} else {
 					if len(search_results) > 0 {
@@ -292,21 +312,18 @@ main :: proc() {
 
 							im.BeginGroup()
 
-							if im.Selectable(
+							if ui.CustomSelectable(
 								search_result.name,
 								currently_selected_search_result,
+								1,
 								{},
-								{size.x, 30},
+								{size.x - offset_x, 30},
+								{10, 10},
 							) {
 								current_sr_item = cast(i32)i
-								// app_state.current_item_playing_index = i
-								// fmt.println(app_state.current_item_playing_index)
-								// fmt.println(i)
 
 								audio.create_audio_play_thread(audio_state, search_result.fullpath)
 							}
-
-
 							im.EndGroup()
 						}
 					}
@@ -315,7 +332,7 @@ main :: proc() {
 				sync.mutex_unlock(&app_state.mutex)
 			}
 			im.End()
-			im.PopStyleColor(5)
+			im.PopStyleColor(4)
 
 			// Top Right
 			ui.top_right_panel(
