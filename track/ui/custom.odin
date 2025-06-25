@@ -181,14 +181,50 @@ clamp :: proc(value, min_value, max_value: f32) -> f32 {
 	}
 	return value
 }
+
+draw_custom_header :: proc(title: cstring) {
+	header_height: f32 = 50.0
+	header_color := color_vec4_to_u32({0.25, 0.15, 0.35, 1.0}) // purple-ish
+	text_color := color_vec4_to_u32({1, 1, 1, 1})
+
+	draw_list := im.GetWindowDrawList()
+	p0 := im.GetWindowPos()
+	p1 := im.Vec2{p0.x + im.GetWindowWidth(), p0.y + header_height}
+
+	// Reserve vertical space
+	im.SetCursorScreenPos(p0)
+	im.Dummy(im.Vec2{0, header_height})
+
+	// Draw background
+	im.DrawList_AddRectFilled(draw_list, p0, p1, header_color, 5)
+
+	// Push bold font (must have been loaded earlier)
+	// bold_font :=  
+	// font_atlas : ^im.FontAtlas = im.GetIO().Fonts
+	// fonts := (font_atlas^).Fonts
+
+	// Replace index if different
+	// im.PushFont(bold_font)
+
+
+	// Center the text vertically
+	text_size := im.CalcTextSize(title)
+	text_pos := im.Vec2 {
+		p0.x + 10.0, // horizontal padding
+		p0.y + (header_height - text_size.y) / 2.0,
+	}
+	im.DrawList_AddText(draw_list, text_pos, text_color, title)
+}
+
+
 audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
-	left_margin:  f32 = 40.0
+	left_margin: f32 = 40.0
 	right_margin: f32 = 40.0
 	spacing := im.GetStyle().ItemSpacing.x
 
 	total_width := im.GetContentRegionAvail().x - left_margin - right_margin
 	progress_width := (total_width - spacing) * 6.0 / 8.0
-	volume_width := (total_width - spacing) * 2.0 / 8.0 
+	volume_width := (total_width - spacing) * 2.0 / 8.0
 	height: f32 = 10.0
 
 	im.PushID("audio_seekbar")
@@ -285,4 +321,3 @@ audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 
 	im.PopID()
 }
-

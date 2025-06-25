@@ -59,11 +59,18 @@ main :: proc() {
 	io := im.GetIO()
 
 	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad}
-	im.FontAtlas_AddFontFromFileTTF(
+	base_font := im.FontAtlas_AddFontFromFileTTF(
 		io.Fonts,
 		"C:/Projects/track_player/track/fonts/Roboto/Roboto-VariableFont_wdth,wght.ttf",
 		16,
 	)
+	bold_header_font := im.FontAtlas_AddFontFromFileTTF(
+		io.Fonts,
+		"C:/Projects/track_player/track/fonts/Roboto/static/Roboto_Condensed-Bold.ttf",
+		30,
+	)
+
+	// C:\Projects\track_player\track\fonts\Roboto_Condensed\static\RobotoCondensed-Bold.ttf
 
 	// init app state
 	app.g_app = app.init_app()
@@ -306,6 +313,7 @@ main :: proc() {
 			// Top Right
 			display_songs := app.g_app.current_view_index == 0 ? app.g_app.all_songs : app.g_app.clicked_playlist
 			ui.top_right_panel(
+				bold_header_font,
 				&shared_files_mutex,
 				&display_songs,
 				audio_state,

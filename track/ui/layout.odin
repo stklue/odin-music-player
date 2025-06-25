@@ -36,6 +36,7 @@ color_vec4_to_u32 :: proc(c: Vec4) -> u32 {
 
 
 top_right_panel :: proc(
+	bolt_font: ^im.Font,
 	shared_files_mutex: ^sync.Mutex,
 	all_paths: ^[dynamic]app.FileEntry,
 	audio_state: ^audio.AudioState,
@@ -49,11 +50,16 @@ top_right_panel :: proc(
 	defer style.FramePadding = old_padding // Restore after the frame
 
 	style.FramePadding = 16
-	if im.Begin(
-		app_state.playlist_index == -1 ? "All Songs" : text(app_state.playlists[app_state.playlist_index].meta.title),
-		nil,
-		{.NoResize, .NoCollapse},
-	) {
+
+	if im.Begin("##right-panel-header", nil, {.NoResize, .NoCollapse, .NoTitleBar}) {
+		title :=
+			app_state.playlist_index == -1 ? "All Songs" : text(app_state.playlists[app_state.playlist_index].meta.title)
+
+		im.PushFont(bolt_font)
+		draw_custom_header(title)
+		im.PopFont()
+
+
 		// if im.Begin("##top-right", nil, {.NoResize}) {
 		sync.mutex_lock(shared_files_mutex)
 
@@ -69,7 +75,6 @@ top_right_panel :: proc(
 			bg := color_vec4_to_u32({0.9, 0.2, 0.2, 1})
 
 			if CustomSelectable(v.name, is_selected, 0, {}, {size.x, 30}, {50, 10}) {
-
 
 
 				fmt.printf("[App] Playing: %s\n", v.name)
@@ -103,7 +108,6 @@ top_right_panel :: proc(
 bottom_panel :: proc(
 	app_state: ^app.AppState,
 	display_songs: ^[dynamic]app.FileEntry,
-
 	audio_state: ^audio.AudioState,
 	top_h, screen_w, third_h: f32,
 ) {
