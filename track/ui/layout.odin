@@ -161,20 +161,17 @@ bottom_panel :: proc(
 			audio.stop_playback(audio_state)
 		}
 		im.SameLine()
-		switch app_state.repeat_option {
+		switch audio_state.repeat_option {
 		case .All:
 			if im.Button("All") {
-				app_state.repeat_option = .One
 				audio_state.repeat_option = .One
 			}
 		case .One:
 			if im.Button("One") {
-				app_state.repeat_option = .Off
 				audio_state.repeat_option = .Off
 			}
 		case .Off:
 			if im.Button("Off") {
-				app_state.repeat_option = .All
 				audio_state.repeat_option = .All
 			}
 		}

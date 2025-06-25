@@ -30,7 +30,6 @@ AppState :: struct {
 	all_songs:                  [dynamic]FileEntry,
 	clicked_playlist:           [dynamic]FileEntry,
 	playlist_item_clicked:      bool,
-	repeat_option:              common.RepeatOption,
 }
 
 g_app: ^AppState
@@ -50,7 +49,6 @@ init_app :: proc() -> ^AppState {
 	state.current_view_index = 0 // display all songs
 	state.views[0] = true // default view should display
 	state.playlist_index = -1 // -1 = all the songs playlist
-	state.repeat_option = .One
 	// state.all_songs_item_playling = nil
 	return state
 }
