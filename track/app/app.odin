@@ -1,6 +1,7 @@
 package app
 
 // import fe "../file"
+import common "../common"
 import pl "../playlist"
 import "core:fmt"
 import "core:os"
@@ -10,7 +11,7 @@ import "core:sync"
 
 AppState :: struct {
 	views:                      [100]bool,
-	current_view_index:         int,
+	current_view_index:         int, // 0 = all songs // 1 = any playlist songs
 	mutex:                      sync.Mutex,
 	// current_song:
 	current_item_playing:       Maybe(FileEntry),
@@ -26,7 +27,12 @@ AppState :: struct {
 	all_songs_item_playling:    FileEntry,
 	current_item_playing_index: int,
 	all_songs:                  [dynamic]FileEntry,
+	clicked_playlist:           [dynamic]FileEntry,
+	playlist_item_clicked:      bool,
+	repeat_option:              common.RepeatOption,
 }
+
+g_app: ^AppState
 
 
 FileEntry :: struct {
@@ -40,10 +46,18 @@ FileEntry :: struct {
 
 init_app :: proc() -> ^AppState {
 	state := new(AppState)
+	state.current_view_index = 0 // display all songs
 	state.views[0] = true // default view should display
 	state.playlist_index = -1 // -1 = all the songs playlist
+	state.repeat_option = .One
 	// state.all_songs_item_playling = nil
 	return state
+}
+
+
+playlist_click :: proc() {
+	g_app.current_view_index = 1
+
 }
 
 

@@ -66,7 +66,8 @@ main :: proc() {
 	)
 
 	// init app state
-	app_state := app.init_app()
+	app.g_app = app.init_app()
+	// app.g_app = app.g_app
 	// Load saved state
 	// state := read_playback_state("playback_state.json")
 	// fmt.printf("Last played song: %s\n", state.last_song_path)
@@ -80,12 +81,13 @@ main :: proc() {
 	// save_playback_state("playback_state.json", state)
 	root := "C:/Users/St.Klue/Music"
 
-	app.search_all_files(&app_state.all_songs, root)
-	fmt.printfln("Number  of files found: %d", len(app_state.all_songs))
+	app.search_all_files(&app.g_app.all_songs, root)
+	fmt.printfln("Number  of files found: %d", len(app.g_app.all_songs))
 
 	//  init audio stuff
 	// global audio state
 	audio_state := audio.init_audio_state()
+
 	defer audio.destroy_audio_state(audio_state)
 
 	ma.engine_init(nil, &audio_state.engine)
@@ -123,8 +125,8 @@ main :: proc() {
 	// loading playlists
 
 	playlists_thread := thread.create_and_start_with_poly_data2(
-		&app_state.mutex,
-		&app_state.playlists,
+		&app.g_app.mutex,
+		&app.g_app.playlists,
 		pl.load_all_zpl_playlists,
 	)
 
@@ -136,8 +138,8 @@ main :: proc() {
 	search_input: string
 	previous_input: string
 	filtered_results: [dynamic]app.FileEntry
-	current_pl_item: i32 = 0 // pl = playlist
-	current_sr_item: i32 = 0 // sr = search results
+	current_pl_item: int = 0 // pl = playlist
+	current_sr_item: int = 0 // sr = search results
 	is_selected := false
 
 
@@ -198,15 +200,6 @@ main :: proc() {
 			im.SetNextWindowPos(im.Vec2{0, 0})
 			im.SetNextWindowSize(im.Vec2{third_w, top_h})
 
-			// cstring_buffer := cast(cstring)(&my_buffer[0])
-			// if selected {
-			// 	color = color_vec4_to_u32({0.8, 0.2, 0.6, 0.35})
-			// } else if is_hovered {
-			// 	color = color_vec4_to_u32({0.6, 0.1, 0.4, 0.25})
-			// } else {
-			// 	color = color_vec4_to_u32({0.5, 0.0, 0.3, 0.15})
-			// }
-
 			im.PushStyleColor(im.Col.ScrollbarBg, ui.color_vec4_to_u32({0.2, 0.0, 0.2, 0.25})) // dim purple
 			im.PushStyleColor(im.Col.ScrollbarGrab, ui.color_vec4_to_u32({0.5, 0.1, 0.5, 0.35})) // soft purple grab
 			im.PushStyleColor(
@@ -229,54 +222,43 @@ main :: proc() {
 
 				if im.IsItemEdited() {
 					thread.create_and_start_with_poly_data5(
-						app_state,
+						app.g_app,
 						strings.clone_from_cstring(cast(cstring)(&my_buffer[0])),
-						&app_state.all_songs,
+						&app.g_app.all_songs,
 						&search_results,
 						&search_mutex,
 						app.search_song,
 					)
 				}
-				// im.Text(cast(cstring)(&my_buffer[0]))
-				// if im.InputText("Search", cstring_buffer, 100) {
-
-				// }
-				sync.mutex_lock(&app_state.mutex)
+				
+				sync.mutex_lock(&app.g_app.mutex)
 
 
 				im.BeginChild("##list-region", size, {.AutoResizeX}) // border=true
 				im.Dummy({0, 30})
 				if ui.CustomButton("All Songs", {}, {size.x - offset_x, 30}, {10, 10}) {
-					app_state.playlist_index = -1
+					if app.g_app.playlist_index != -1 {
+						app.g_app.playlist_index = -1
+						app.g_app.current_view_index = 0
+						app.g_app.playlist_item_clicked = false
 
-					//! TODO: SHOULD CHANGE THE FILES PROC TO BE THE ALL FILES PROC 
-					thread.create_and_start_with_poly_data2(
-						&shared_files_mutex,
-						&app_state.all_songs,
-						app.load_files_thread_proc,
-					)
+
+						//! TODO: SHOULD CHANGE THE FILES PROC TO BE THE ALL FILES PROC 
+						clear(&app.g_app.all_songs)
+						thread.create_and_start_with_poly_data2(
+							&app.g_app.all_songs, // &shared_files_mutex,
+							root,
+							app.search_all_files,
+						)
+					}
 				}
 
 				im.Separator()
 
 				// Show searches or the the initial playlist items
 				if len(cast(cstring)(&my_buffer[0])) == 0 {
-					for v, i in app_state.playlists {
-						currently_selected_playlist := current_pl_item == cast(i32)i
-						// if app_state.playlist_index == -1 {
-
-						// } else {
-
-						// }
-						// app_state.playlist_item_playling
-
-						// Start a group per row
-						// im.PushStyleColor(im.Col.Sele, 0) // transparent button bg
-						// im.PushStyleColor(im.PushStyleColor(im.Col.im, ui.color_vec4_to_u32({0.9, 0.3, 0.3, 1})).Col.ButtonActive, 0) // transparent active
-
-						// im.BeginGroup()
-						// im.Dummy(im.Vec2{20, 20})
-						// im.SameLine()
+					for v, i in app.g_app.playlists {
+						currently_selected_playlist := current_pl_item == i
 						if ui.CustomSelectable(
 							strings.clone_to_cstring(v.meta.title),
 							currently_selected_playlist,
@@ -285,30 +267,25 @@ main :: proc() {
 							{size.x - offset_x, 30},
 							{10, 10},
 						) {
-							current_pl_item = cast(i32)i
+							current_pl_item = i
+							app.g_app.playlist_index = i
+							app.g_app.current_view_index = 1 // should view the playlist
+							// app.g_app.current_item_playing_index = -1 // 
 
-							// sync.mutex_lock(&app_state.mutex)
-							// sync.mutex_lock(&app_state.playlist_selection_mutex)
-							app_state.playlist_index = i
-							// sync.mutex_unlock(&app_state.playlist_selection_mutex)
-							// sync.mutex_unlock(&app_state.mutex)
 
 							thread.create_and_start_with_poly_data4(
 								&shared_files_mutex,
-								&app_state.all_songs,
+								&app.g_app.clicked_playlist,
 								i,
-								&app_state.playlists,
+								&app.g_app.playlists,
 								app.load_files_from_pl_thread,
 							)
 						}
-
-
-						// im.EndGroup()
 					}
 				} else {
 					if len(search_results) > 0 {
 						for search_result, i in search_results {
-							currently_selected_search_result := current_sr_item == cast(i32)i
+							currently_selected_search_result := current_sr_item == i
 
 							im.BeginGroup()
 
@@ -320,32 +297,34 @@ main :: proc() {
 								{size.x - offset_x, 30},
 								{10, 10},
 							) {
-								current_sr_item = cast(i32)i
-
-								audio.create_audio_play_thread(audio_state, search_result.fullpath)
+								current_sr_item = i
+								audio.update_path(audio_state, search_result.fullpath)
+								audio.create_audio_play_thread(audio_state)
 							}
 							im.EndGroup()
 						}
 					}
 				}
 				im.EndChild()
-				sync.mutex_unlock(&app_state.mutex)
+				sync.mutex_unlock(&app.g_app.mutex)
 			}
 			im.End()
 			im.PopStyleColor(4)
 
 			// Top Right
+			display_songs := app.g_app.current_view_index == 0 ? app.g_app.all_songs : app.g_app.clicked_playlist
 			ui.top_right_panel(
 				&shared_files_mutex,
-				&app_state.all_songs,
+				&display_songs,
 				audio_state,
-				app_state,
+				app.g_app,
 				top_h,
 				third_w,
 				right_w,
 			)
 			// Bottom
-			ui.bottom_panel(app_state, audio_state, top_h, screen_w, third_h)
+			different_playlist_songs := app.g_app.playlist_item_clicked ? display_songs : app.g_app.all_songs  
+			ui.bottom_panel(app.g_app, &different_playlist_songs, audio_state, top_h, screen_w, third_h)
 		}
 		im.End()
 

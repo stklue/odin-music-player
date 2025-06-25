@@ -12,14 +12,14 @@ import "../../odin-imgui/imgui_impl_glfw"
 import "../../odin-imgui/imgui_impl_opengl3"
 
 // import audio "audio_state"
+import app "../app"
+import audio "../audio_state"
 import "base:runtime"
-import "core:encoding/xml"
 import json "core:encoding/json"
+import "core:encoding/xml"
 import "core:math"
 import "core:path/filepath"
 import "core:sync"
-import app "../app"
-import audio "../audio_state"
 
 text :: proc(s: string) -> cstring {
 	return strings.clone_to_cstring(s)
@@ -69,16 +69,25 @@ top_right_panel :: proc(
 			bg := color_vec4_to_u32({0.9, 0.2, 0.2, 1})
 
 			if CustomSelectable(v.name, is_selected, 0, {}, {size.x, 30}, {50, 10}) {
+
+
+
 				fmt.printf("[App] Playing: %s\n", v.name)
 				fmt.println(i, app_state.current_item_playing_index, is_selected)
 				// set_current_item(app_state, v)
 
 				sync.mutex_lock(&app_state.mutex)
+				// if app_state.playlist_item_clicked {
+
+				// }
+				// app_state.
 				app_state.all_songs_item_playling = v
+				app_state.playlist_item_clicked = true
 				app_state.current_item_playing_index = i
 				sync.mutex_unlock(&app_state.mutex)
 
-				audio.create_audio_play_thread(audio_state, v.fullpath)
+				audio.update_path(audio_state, v.fullpath)
+				audio.create_audio_play_thread(audio_state)
 			}
 
 			im.EndGroup()
@@ -93,6 +102,8 @@ top_right_panel :: proc(
 }
 bottom_panel :: proc(
 	app_state: ^app.AppState,
+	display_songs: ^[dynamic]app.FileEntry,
+
 	audio_state: ^audio.AudioState,
 	top_h, screen_w, third_h: f32,
 ) {
@@ -102,19 +113,7 @@ bottom_panel :: proc(
 		im.PushStyleColor(im.Col.Button, 0) // transparent button bg
 		im.PushStyleColor(im.Col.ButtonHovered, color_vec4_to_u32({0.9, 0.3, 0.3, 1})) // transparent hover
 		im.PushStyleColor(im.Col.ButtonActive, 0) // transparent active
-		// im.PushStyleVarY
-		// if im.ImageButton(
-		// "play_btn",
-		// cast(rawptr)(cast(uintptr)play_texture),
-		// im.Vec2{32, 32},
-		// im.Vec2{0, 0},
-		// im.Vec2{1, 1},
-		// im.Vec4{0, 0, 0, 0}, // ✅ transparent background
-		// im.Vec4{1, 0, 0, 1},
-		// ) {
-		// 	// Trigger play logic here
-		// }
-		// im.SameLine()
+
 		button_count: f32 = 4.0
 		button_width: f32 = 100.0
 		spacing := im.GetStyle().ItemSpacing.x
@@ -129,10 +128,8 @@ bottom_panel :: proc(
 			prev_path_index :=
 				app_state.current_item_playing_index - 1 >= 0 ? app_state.current_item_playing_index - 1 : 0
 			app_state.all_songs_item_playling = app_state.all_songs[prev_path_index]
-			audio.create_audio_play_thread(
-				audio_state,
-				app_state.all_songs[prev_path_index].fullpath,
-			)
+			audio.update_path(audio_state, app_state.all_songs[prev_path_index].fullpath)
+			audio.create_audio_play_thread(audio_state)
 			sync.mutex_lock(&app_state.mutex)
 			app_state.current_item_playing_index = prev_path_index
 			sync.mutex_unlock(&app_state.mutex)
@@ -151,10 +148,8 @@ bottom_panel :: proc(
 			next_path_index :=
 				app_state.current_item_playing_index + 1 >= len(app_state.all_songs) ? app_state.current_item_playing_index : app_state.current_item_playing_index + 1
 			app_state.all_songs_item_playling = app_state.all_songs[next_path_index]
-			audio.create_audio_play_thread(
-				audio_state,
-				app_state.all_songs[next_path_index].fullpath,
-			)
+			audio.update_path(audio_state, app_state.all_songs[next_path_index].fullpath)
+			audio.create_audio_play_thread(audio_state)
 			sync.mutex_lock(&app_state.mutex)
 			app_state.current_item_playing_index = next_path_index
 			sync.mutex_unlock(&app_state.mutex)
@@ -165,6 +160,24 @@ bottom_panel :: proc(
 		if im.Button("Stop") {
 			audio.stop_playback(audio_state)
 		}
+		im.SameLine()
+		switch app_state.repeat_option {
+		case .All:
+			if im.Button("All") {
+				app_state.repeat_option = .One
+				audio_state.repeat_option = .One
+			}
+		case .One:
+			if im.Button("One") {
+				app_state.repeat_option = .Off
+				audio_state.repeat_option = .Off
+			}
+		case .Off:
+			if im.Button("Off") {
+				app_state.repeat_option = .All
+				audio_state.repeat_option = .All
+			}
+		}
 
 
 		im.PopStyleColor(3)
@@ -172,13 +185,10 @@ bottom_panel :: proc(
 		audio_progress_bar_and_volume_bar(audio_state)
 
 		im.Dummy({0, 20})
-		im.Text(
-			len(app_state.all_songs_item_playling.name) == 0 ? "" : app_state.all_songs_item_playling.name,
-		)
-
-
+		// im.Text(
+		// 	app_state.current_item_playing_index == -1 ? "" : display_songs[app_state.current_item_playing_index].name,
+		// )
 	}
 	im.End()
 
 }
-

@@ -1,6 +1,8 @@
 package audio
 
 
+import app "../app"
+import common "../common"
 import "base:runtime"
 import "core:fmt"
 import "core:mem"
@@ -8,6 +10,7 @@ import "core:sync"
 import "core:thread"
 import "core:time"
 import ma "vendor:miniaudio"
+
 
 // AudioState represents the audio playback state
 AudioState :: struct {
@@ -26,15 +29,18 @@ AudioState :: struct {
 	volume:                      f32, // volume level (0.0 to 1.0)
 	thread:                      ^thread.Thread,
 	is_new_song_but_not_same_pl: bool,
-	repeat:                      bool,
 	thread_done:                 bool,
-	play_next:                   bool,
+	repeat_option:               common.RepeatOption,
+	path:                        cstring,
+	next_path:                   cstring,
+	next_path_index:             int,
 }
 
 // Initializes a new AudioState
 init_audio_state :: proc() -> ^AudioState {
 	state := new(AudioState)
 	state.volume = 0.3 // Default volume
+	state.repeat_option = .One
 	// sync.mutext_(&state.mutex)
 	return state
 }
@@ -61,16 +67,16 @@ destroy_audio_state :: proc(state: ^AudioState) {
 }
 
 // Play audio file
-play_audio :: proc(state: ^AudioState, file_path: cstring) {
+play_audio :: proc(state: ^AudioState) {
 	sync.mutex_lock(&state.mutex)
 	defer sync.mutex_unlock(&state.mutex)
 	state.thread_done = false
-	state.repeat = true
-	fmt.println("[PLAY_AUDIO_LOG] Starting new song playback...")
+	// state.repeat = true
+	fmt.println("[AUDIO_STATE_PLAY_AUDIO] Starting new song playback...")
 
 	// Stop and clean up any currently playing audio
 	if state.device != nil {
-		fmt.println("[PLAY_AUDIO_LOG] Stopping and cleaning up previous device...")
+		fmt.println("[AUDIO_STATE_PLAY_AUDIO] Stopping and cleaning up previous device...")
 		ma.device_stop(state.device)
 		time.sleep(5 * time.Millisecond)
 		state.current_time = 0
@@ -81,33 +87,37 @@ play_audio :: proc(state: ^AudioState, file_path: cstring) {
 	}
 
 	if state.decoder != nil {
-		fmt.println("[PLAY_AUDIO_LOG] Uninitializing previous decoder...")
+		fmt.println("[AUDIO_STATE_PLAY_AUDIO] Uninitializing previous decoder...")
 		ma.decoder_uninit(state.decoder)
 		free(state.decoder)
 		state.decoder = nil
 	}
 
 	// Initialize new decoder
-	fmt.printf("Loading audio file: %s\n", file_path)
+	fmt.printf("[AUDIO_STATE_PLAY_AUDIO] Loading audio file: %s\n", state.path)
 	decoder := new(ma.decoder)
 	ma.decoder_seek_to_pcm_frame(decoder, 0)
 
-	err := ma.decoder_init_file(file_path, nil, decoder)
+	err := ma.decoder_init_file(state.path, nil, decoder)
 	if err != .SUCCESS {
-		fmt.printf("Failed to load file: %v\n", err)
+		fmt.printf("[AUDIO_STATE_PLAY_AUDIO] Failed to load file: %v\n", err)
 		free(decoder)
 		return
 	}
 
 	// Seek decoder to beginning before playback starts
-	fmt.println("[PLAY_AUDIO_LOG] Seeking decoder to the beginning...")
+	fmt.println("[AUDIO_STATE_PLAY_AUDIO] Seeking decoder to the beginning...")
 
 	// Get duration of the track
 	frame_count: u64
 	ma.decoder_get_available_frames(decoder, &frame_count)
 	state.duration = auto_cast frame_count / auto_cast decoder.outputSampleRate
 
-	fmt.printf("Duration: %.2f seconds (%.1f minutes)\n", state.duration, state.duration / 60)
+	fmt.printf(
+		"[AUDIO_STATE_PLAY_AUDIO] Duration: %.2f seconds (%.1f minutes)\n",
+		state.duration,
+		state.duration / 60,
+	)
 
 	// Set up device config
 	device_config := ma.device_config_init(.playback)
@@ -128,15 +138,14 @@ play_audio :: proc(state: ^AudioState, file_path: cstring) {
 		if state.should_seek {
 			target_frame := u64(state.seek_target * auto_cast state.decoder.outputSampleRate)
 			context = runtime.default_context()
-			fmt.printf("Seeking inside callback to frame: %d\n", target_frame)
+			fmt.printf(
+				"[AUDIO_STATE_CALLBACK] Seeking inside callback to frame: %d\n",
+				target_frame,
+			)
 			ma.decoder_seek_to_pcm_frame(state.decoder, target_frame)
 			state.current_time = state.seek_target
 			state.should_seek = false
 		}
-
-		// if !state.was_paused {
-		// 	state.is_playing = false
-		// }
 
 		frames_read: u64 = 0
 		read_result := ma.decoder_read_pcm_frames(
@@ -147,11 +156,14 @@ play_audio :: proc(state: ^AudioState, file_path: cstring) {
 		)
 
 		state.current_time += auto_cast frames_read / auto_cast state.decoder.outputSampleRate
-		// fmt.printf("🎧 Current time: %.2f / %.2f\n", state.current_time, state.duration)
+		// fmt.printf(" Current time: %.2f / %.2f\n", state.current_time, state.duration)
 
 		if read_result != .SUCCESS || frames_read < auto_cast frame_count {
 			context = runtime.default_context()
-			fmt.println("[PLAY_AUDIO_LOG] Reached end of stream or error during read.")
+			fmt.println(
+				"[AUDIO_STATE_CALLBACK] Reached end of stream or error during read.",
+				read_result,
+			)
 			state.is_playing = false
 			// ma.device_stop(device)
 			runtime.memset(
@@ -159,18 +171,20 @@ play_audio :: proc(state: ^AudioState, file_path: cstring) {
 				0,
 				int(frame_count * size_of(f32) * state.decoder.outputChannels),
 			)
+
 			return
 		}
+
 
 		// context = runtime.default_context()
 		// fmt.printfln("2. Inside callback: %.2f", state.current_time)
 	}
 
 	// Initialize device
-	fmt.println("[PLAY_AUDIO_LOG] Initializing playback device...")
+	fmt.println("[AUDIO_STATE_PLAY_AUDIO] Initializing playback device...")
 	device := new(ma.device)
 	if ma.device_init(nil, &device_config, device) != .SUCCESS {
-		fmt.println("[PLAY_AUDIO_LOG] Failed to open playback device")
+		fmt.println("[AUDIO_STATE_PLAY_AUDIO] Failed to open playback device")
 		ma.decoder_uninit(decoder)
 		free(decoder)
 		free(device)
@@ -178,12 +192,12 @@ play_audio :: proc(state: ^AudioState, file_path: cstring) {
 	}
 
 	// Set volume
-	fmt.printf("Setting volume to %.2f\n", state.volume)
+	fmt.printf("[AUDIO_STATE_PLAY_AUDIO] Setting volume to %.2f\n", state.volume)
 	ma.device_set_master_volume(device, state.volume)
 
 	// Start playback
 	if ma.device_start(device) != .SUCCESS {
-		fmt.println("[PLAY_AUDIO_LOG] Failed to start playback device")
+		fmt.println("[AUDIO_STATE_PLAY_AUDIO] Failed to start playback device")
 		ma.device_uninit(device)
 		ma.decoder_uninit(decoder)
 		free(device)
@@ -200,7 +214,7 @@ play_audio :: proc(state: ^AudioState, file_path: cstring) {
 	// thread is done
 	state.thread_done = true
 
-	fmt.println("[PLAY_AUDIO_LOG] Playback started from the beginning successfully.")
+	fmt.println("[AUDIO_STATE_PLAY_AUDIO] Playback started from the beginning successfully.")
 }
 
 toggle_playback :: proc(state: ^AudioState) {
@@ -266,6 +280,98 @@ set_volume :: proc(state: ^AudioState, volume: f32) {
 }
 
 
+update_path :: proc(state: ^AudioState, p: cstring) {
+	sync.mutex_lock(&state.mutex)
+	defer sync.mutex_unlock(&state.mutex)
+
+	state.path = p
+}
+
+//  called every frame in UI
+update_audio :: proc(state: ^AudioState) {
+	play_next := false
+	sync.mutex_lock(&state.mutex)
+	// defer sync.mutex_unlock(&state.mutex)
+
+	if state.device == nil || state.decoder == nil {
+		sync.mutex_unlock(&state.mutex)
+		return
+	}
+
+	// Check if sound finished playing
+	if !state.is_playing && !state.was_paused {
+		switch state.repeat_option {
+		case .All:
+			fmt.println("[AUDIO_STATE_UPDATE_AUDIO] Set repeat all")
+			play_next = true
+		case .One:
+			// default
+			fmt.println("[AUDIO_STATE_UPDATE_AUDIO] Repeating song")
+			state.seek_target = 0
+			state.should_seek = true
+			state.is_playing = true
+			ma.device_start(state.device)
+		case .Off:
+			// fmt.println("[AUDIO_STATE_UPDATE_AUDIO] Repeat Off")
+			state.seek_target = 0
+			state.should_seek = true
+			state.is_playing = false
+			ma.device_stop(state.device)
+		}
+		// ma.decoder_seek_to_pcm_frame(state.decoder, 0)
+	}
+
+
+	sync.mutex_unlock(&state.mutex)
+
+	// Safe to call now, *after* releasing the lock
+	if play_next {
+		sync.mutex_lock(&app.g_app.mutex)
+		app.g_app.current_item_playing_index += 1
+		sync.mutex_unlock(&app.g_app.mutex)
+		state.path = app.g_app.all_songs[app.g_app.current_item_playing_index].fullpath
+
+		create_audio_play_thread(state)
+	}
+}
+
+play_next_song :: proc(state: ^AudioState) {
+	sync.mutex_lock(&state.mutex)
+	defer sync.mutex_unlock(&state.mutex)
+	sync.mutex_lock(&app.g_app.mutex)
+	defer sync.mutex_unlock(&app.g_app.mutex)
+
+	next_path_index :=
+		app.g_app.current_item_playing_index + 1 >= len(app.g_app.all_songs) ? 0 : app.g_app.current_item_playing_index + 1
+	app.g_app.all_songs_item_playling = app.g_app.all_songs[next_path_index]
+
+	app.g_app.current_item_playing_index = next_path_index
+	update_path(state, app.g_app.all_songs[next_path_index].fullpath)
+}
+
+
+create_audio_play_thread :: proc(state: ^AudioState) {
+	fmt.println("[AUDIO_STATE_CREATE_AUDIO_THREAD] Create play thread")
+	sync.mutex_lock(&state.mutex)
+	defer sync.mutex_unlock(&state.mutex)
+	if state.thread != nil {
+		for !state.thread_done {
+			thread.yield()
+		}
+		thread.destroy(state.thread)
+		state.thread = nil
+		fmt.println("Killed the old thread and created new one.")
+		// state.decoder = nil
+		state.current_time = 0
+	}
+
+	state.thread_done = false
+	// thread.destroy(state.thread)
+	state.thread = thread.create_and_start_with_poly_data(state, play_audio)
+	fmt.println("[AUDIO_STATE_CREATE_AUDIO_THREAD] Finished play thread creation")
+}
+
+
 skip_2s_forward :: proc(state: ^AudioState) {
 	sync.mutex_lock(&state.mutex)
 	defer sync.mutex_unlock(&state.mutex)
@@ -321,56 +427,4 @@ skip_5s_backward :: proc(state: ^AudioState) {
 
 	state.seek_target = new_position
 	state.should_seek = true
-}
-
-
-update_audio :: proc(state: ^AudioState) {
-	sync.mutex_lock(&state.mutex)
-	defer sync.mutex_unlock(&state.mutex)
-
-	if state.device == nil || state.decoder == nil {
-		return
-	}
-
-	// Check if sound finished playing
-	// if state.is_playing && state.current_time >= state.duration {
-	// fmt.println("Song finished.")
-	// state.is_playing = false
-	// state.current_time = 0
-	if !state.is_playing && !state.was_paused {
-		if state.repeat {
-			fmt.println("Repeating song...")
-			state.seek_target = 0
-			state.should_seek = true
-			state.is_playing = true
-			ma.device_start(state.device)
-		} else if state.play_next {
-			state.seek_target = 0
-			state.should_seek = true
-			state.is_playing = true
-			ma.device_start(state.device)
-
-		}
-		// ma.decoder_seek_to_pcm_frame(state.decoder, 0)
-	}
-}
-
-
-create_audio_play_thread :: proc(state: ^AudioState, path: cstring) {
-	sync.mutex_lock(&state.mutex)
-	defer sync.mutex_unlock(&state.mutex)
-	if state.thread != nil {
-		for !state.thread_done {
-			thread.yield()
-		}
-		thread.destroy(state.thread)
-		state.thread = nil
-		fmt.println("Killed the old thread and created new one.")
-		// state.decoder = nil
-		state.current_time = 0
-	}
-
-	state.thread_done = false
-	// thread.destroy(state.thread)
-	state.thread = thread.create_and_start_with_poly_data2(state, path, play_audio)
 }
