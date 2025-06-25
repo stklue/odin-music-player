@@ -26,6 +26,7 @@ AppState :: struct {
 	// playlist_selection_mutex: sync.Mutex,
 	all_songs_item_playling:    FileEntry,
 	current_item_playing_index: int,
+	search_result_index:        int,
 	all_songs:                  [dynamic]FileEntry,
 	clicked_playlist:           [dynamic]FileEntry,
 	playlist_item_clicked:      bool,

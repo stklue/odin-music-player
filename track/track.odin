@@ -134,14 +134,6 @@ main :: proc() {
 	//  gui state
 	my_buffer: [256]u8
 
-	//  search details
-	search_input: string
-	previous_input: string
-	filtered_results: [dynamic]app.FileEntry
-	current_pl_item: int = 0 // pl = playlist
-	current_sr_item: int = 0 // sr = search results
-	is_selected := false
-
 
 	for !glfw.WindowShouldClose(window) {
 		glfw.PollEvents()
@@ -258,7 +250,7 @@ main :: proc() {
 				// Show searches or the the initial playlist items
 				if len(cast(cstring)(&my_buffer[0])) == 0 {
 					for v, i in app.g_app.playlists {
-						currently_selected_playlist := current_pl_item == i
+						currently_selected_playlist := app.g_app.playlist_index == i
 						if ui.CustomSelectable(
 							strings.clone_to_cstring(v.meta.title),
 							currently_selected_playlist,
@@ -267,7 +259,7 @@ main :: proc() {
 							{size.x - offset_x, 30},
 							{10, 10},
 						) {
-							current_pl_item = i
+							// current_pl_item = i
 							app.g_app.playlist_index = i
 							app.g_app.current_view_index = 1 // should view the playlist
 							// app.g_app.current_item_playing_index = -1 // 
@@ -285,7 +277,7 @@ main :: proc() {
 				} else {
 					if len(search_results) > 0 {
 						for search_result, i in search_results {
-							currently_selected_search_result := current_sr_item == i
+							currently_selected_search_result := app.g_app.search_result_index == i
 
 							im.BeginGroup()
 
@@ -297,7 +289,7 @@ main :: proc() {
 								{size.x - offset_x, 30},
 								{10, 10},
 							) {
-								current_sr_item = i
+								app.g_app.search_result_index = i
 								audio.update_path(audio_state, search_result.fullpath)
 								audio.create_audio_play_thread(audio_state)
 							}
