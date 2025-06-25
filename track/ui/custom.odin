@@ -181,22 +181,25 @@ clamp :: proc(value, min_value, max_value: f32) -> f32 {
 	}
 	return value
 }
-
 audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
-	total_width := im.GetContentRegionAvail().x
+	left_margin:  f32 = 40.0
+	right_margin: f32 = 40.0
 	spacing := im.GetStyle().ItemSpacing.x
 
+	total_width := im.GetContentRegionAvail().x - left_margin - right_margin
 	progress_width := (total_width - spacing) * 6.0 / 8.0
-	volume_width := (total_width - spacing) * 2.0 / 8.0
+	volume_width := (total_width - spacing) * 2.0 / 8.0 
 	height: f32 = 10.0
 
-	// ========== AUDIO PROGRESS ==========
 	im.PushID("audio_seekbar")
 
 	value := audio_state.duration > 0 ? audio_state.current_time / audio_state.duration : 0.0
 	slider_size := im.Vec2{progress_width, height}
-	slider_pos := im.GetCursorScreenPos()
 
+	slider_pos := im.GetCursorScreenPos()
+	slider_pos.x += left_margin // ✅ Add left margin
+
+	im.SetCursorScreenPos(slider_pos)
 	im.InvisibleButton("##seek_slider", slider_size)
 
 	if im.IsItemActive() {
@@ -213,20 +216,10 @@ audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	handle_x := p0.x + progress_width * value
 	handle_radius: f32 = active || hovered ? 7.0 : 5.0
 
-	// col_bg := color_vec4_to_u32({0.5, 0.1, 0.1, 1})
-	// // col_bg :=    im.GetColorU32(.FrameBg)
-	// col_fg := color_vec4_to_u32({0.8, 0.25, 0.25, 1})
-	// col_border := im.GetColorU32(.Border)
-	// // col_handle := im.GetColorU32(.Text)
-	// col_handle := color_vec4_to_u32({0.9, 0.3, 0.3, 1})
-
-
-	col_bg := color_vec4_to_u32({0.2, 0.0, 0.2, 0.25}) // dark purple base
-	col_fg := color_vec4_to_u32({0.6, 0.1, 0.6, 0.35}) // progress fill (hover pink)
-	col_handle := color_vec4_to_u32({0.9, 0.3, 0.9, 0.55}) // draggable circle (bright magenta)
-	col_border := color_vec4_to_u32({1.0, 0.4, 1.0, 0.35}) // subtle purple outline
-
-
+	col_bg := color_vec4_to_u32({0.2, 0.0, 0.2, 0.25})
+	col_fg := color_vec4_to_u32({0.6, 0.1, 0.6, 0.35})
+	col_handle := color_vec4_to_u32({0.9, 0.3, 0.9, 0.55})
+	col_border := color_vec4_to_u32({1.0, 0.4, 1.0, 0.35})
 	rounding: f32 = 2.0
 
 	im.DrawList_AddRectFilled(draw_list, p0, p1, col_bg, rounding)
@@ -255,12 +248,14 @@ audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	im.PopID()
 
 	// ========== VOLUME SLIDER ==========
+
 	im.SameLine()
 	im.PushID("volume_slider")
 
 	volume_slider_pos := im.GetCursorScreenPos()
-	volume_slider_size := im.Vec2{volume_width, height}
 
+	volume_slider_size := im.Vec2{volume_width, height}
+	im.SetCursorScreenPos(volume_slider_pos)
 	im.InvisibleButton("##volume_slider", volume_slider_size)
 
 	if im.IsItemActive() {
@@ -290,3 +285,4 @@ audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 
 	im.PopID()
 }
+
