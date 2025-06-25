@@ -130,7 +130,6 @@ main :: proc() {
 	)
 
 	// loading playlists
-
 	playlists_thread := thread.create_and_start_with_poly_data2(
 		&app.g_app.mutex,
 		&app.g_app.playlists,
@@ -165,7 +164,7 @@ main :: proc() {
 		audio.update_audio(audio_state)
 
 		// ========= UI KEY PRESSES ===========
-		if im.IsKeyPressed(.Space, false) {
+		if im.IsKeyPressed(.Space, false) && !app.g_app.is_searching {
 			fmt.println("You pressed on the space button")
 			audio.toggle_playback(audio_state)
 		}
