@@ -164,11 +164,12 @@ main :: proc() {
 		audio.update_audio(audio_state)
 
 		// ========= UI KEY PRESSES ===========
-		if im.IsKeyPressed(.Space, false) && !app.g_app.is_searching {
-			fmt.println("You pressed on the space button")
-			audio.toggle_playback(audio_state)
+		if !io.WantCaptureKeyboard {
+			if im.IsKeyPressed(.Space, false) {
+				fmt.println("You pressed on the space button")
+				audio.toggle_playback(audio_state)
+			}
 		}
-
 
 		if im.IsKeyPressed(.RightArrow, true) {
 			audio.skip_2s_forward(audio_state)

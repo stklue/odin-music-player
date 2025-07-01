@@ -82,13 +82,10 @@ top_right_panel :: proc(
 				// set_current_item(app_state, v)
 
 				sync.mutex_lock(&app_state.mutex)
-				// if app_state.playlist_item_clicked {
-
-				// }
-				// app_state.
 				app_state.all_songs_item_playling = v
 				app_state.playlist_item_clicked = true
 				app_state.current_item_playing_index = i
+				app_state.all_songs = all_paths^ //only changed when user clicks on an item in the playlist
 				sync.mutex_unlock(&app_state.mutex)
 
 				audio.update_path(audio_state, v.fullpath)

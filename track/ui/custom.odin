@@ -184,7 +184,10 @@ clamp :: proc(value, min_value, max_value: f32) -> f32 {
 
 draw_custom_header :: proc(title: cstring) {
 	header_height: f32 = 50.0
-	header_color := color_vec4_to_u32({0.25, 0.15, 0.35, 1.0}) // purple-ish
+	header_color := color_vec4_to_u32({0.1, 0.1, 0.1, 1.0}) // purple-ish
+				// color = color_vec4_to_u32({0.6, 0.1, 0.4, 0.25})
+// color_vec4_to_u32({0.8, 0.2, 0.6, 0.35})
+
 	text_color := color_vec4_to_u32({1, 1, 1, 1})
 
 	draw_list := im.GetWindowDrawList()
