@@ -171,7 +171,7 @@ package main
 // 				im.Text("This is Top Right")
 // 				sync.mutex_lock(&shared_files_mutex)
 // 				for file_name in shared_files {
-// 					im.Text(strings.clone_to_cstring(file_name.name))
+// 					im.Text(fmt.ctprint(file_name.name))
 // 				}
 // 				sync.mutex_unlock(&shared_files_mutex)
 // 			}
@@ -215,7 +215,7 @@ package main
 // 				// im.ProgressBar(
 // 				// 	progress,
 // 				// 	{im.GetContentRegionAvail().x, 20},
-// 				// 	strings.clone_to_cstring(
+// 				// 	fmt.ctprint(
 // 				// 		fmt.tprintf(
 // 				// 			"%.1f / %.1f seconds",
 // 				// 			audio_state.current_time,

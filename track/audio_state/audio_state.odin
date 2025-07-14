@@ -5,8 +5,12 @@ import app "../app"
 import common "../common"
 import "base:runtime"
 import "core:fmt"
+import "core:math"
 import "core:mem"
+import "core:os"
+import "core:strings"
 import "core:sync"
+import "core:sys/windows"
 import "core:thread"
 import "core:time"
 import ma "vendor:miniaudio"
@@ -14,26 +18,28 @@ import ma "vendor:miniaudio"
 
 // AudioState represents the audio playback state
 AudioState :: struct {
-	device:                      ^ma.device,
-	decoder:                     ^ma.decoder,
-	device_config:               ma.device_config,
-	mutex:                       sync.Mutex,
-	engine:                      ma.engine,
-	sound:                       ma.sound,
-	is_playing:                  bool,
-	was_paused:                  bool,
-	duration:                    f32, // in seconds
-	current_time:                f32, // in seconds
-	should_seek:                 bool, // flag for seeking
-	seek_target:                 f32, // target position for seeking
-	volume:                      f32, // volume level (0.0 to 1.0)
-	thread:                      ^thread.Thread,
-	is_new_song_but_not_same_pl: bool,
-	thread_done:                 bool,
-	repeat_option:               common.RepeatOption,
-	path:                        cstring,
-	next_path:                   cstring,
-	next_path_index:             int,
+	device:         ^ma.device,
+	decoder:        ^ma.decoder,
+	device_config:  ma.device_config,
+	mutex:          sync.Mutex,
+	engine:         ma.engine,
+	sound:          ma.sound,
+	is_playing:     bool,
+	was_paused:     bool,
+	duration:       f32, // in seconds
+	current_time:   f32, // in seconds
+	should_seek:    bool, // flag for seeking
+	seek_target:    f32, // target position for seeking
+	volume:         f32, // volume level (0.0 to 1.0)
+	thread:         ^thread.Thread,
+	thread_done:    bool,
+	repeat_option:  common.RepeatOption,
+	path:           cstring,
+	wave_energy:    f32,
+	wave_amplitude: f32,
+	fft:            [512]f32, // last FFT frame (mono-mixed)
+	rms:            f32, // running RMS loudness 0-1
+	bass:           f32, // running bass energy 0-1 (bins 0-7)
 }
 
 // Initializes a new AudioState
@@ -97,11 +103,28 @@ play_audio :: proc(state: ^AudioState) {
 	fmt.printf("[AUDIO_STATE_PLAY_AUDIO] Loading audio file: %s\n", state.path)
 	decoder := new(ma.decoder)
 	ma.decoder_seek_to_pcm_frame(decoder, 0)
+	// Before calling ma.decoder_init_file
+	if !os.exists(strings.clone_from_cstring(state.path)) {
+		fmt.printf("[AUDIO_STATE_PLAY_AUDIO] File does not exist: %s\n", state.path)
+		free(decoder)
+		return
+	}
 
-	err := ma.decoder_init_file(state.path, nil, decoder)
+	// Convert UTF-8 path to wide string
+	// Fixed windows path problems; TODO: Should change the full_path to this
+	// cleaned_str := fmt.tprint(state.path)[4:]
+	// fmt.println("Cleaned string: ", cleaned_str, "Other: ", state.path)
+	wide_path := windows.utf8_to_wstring(strings.clone_from_cstring(state.path))
+	fmt.println("The wide path: ", wide_path)
+	// defer free(wide_path)
+
+	// err := ma.decoder_init_file(state.path, nil, decoder)
+	err := ma.decoder_init_file_w(wide_path, nil, decoder)
 	if err != .SUCCESS {
 		fmt.printf("[AUDIO_STATE_PLAY_AUDIO] Failed to load file: %v\n", err)
 		free(decoder)
+		// TODO: Should implement message system: display to user this path is invalid
+		// then request to rescan 
 		return
 	}
 
@@ -134,7 +157,6 @@ play_audio :: proc(state: ^AudioState) {
 		defer sync.mutex_unlock(&state.mutex)
 		// context = runtime.default_context()
 		// fmt.printfln("1. Inside callback: %d", state.current_time)
-
 		if state.should_seek {
 			target_frame := u64(state.seek_target * auto_cast state.decoder.outputSampleRate)
 			context = runtime.default_context()
@@ -157,6 +179,35 @@ play_audio :: proc(state: ^AudioState) {
 
 		state.current_time += auto_cast frames_read / auto_cast state.decoder.outputSampleRate
 		// fmt.printf(" Current time: %.2f / %.2f\n", state.current_time, state.duration)
+
+		// amplitute estimation
+		samples := cast([^]f32)output
+		sample_count := u32(frames_read) * state.decoder.outputChannels
+
+		sum: f32 = 0.0
+		for i in 0 ..< sample_count {
+			sum += samples[i] * samples[i] // energy
+		}
+
+		avg := sum / f32(sample_count)
+		state.wave_amplitude = clamp(avg * 6.0, 0.05, 1.0)
+		state.wave_energy = math.sqrt(avg)
+
+		// 1. FFT (fake but good-looking)
+		for i := 0; i < 512; i += 1 {
+			f := f32(i) / 512.0
+			state.fft[i] =
+				math.pow(avg, 0.5 + f * 0.3) *
+				(0.4 + 0.6 * math.sin(f * math.TAU * 8 + f32(frame_count) * 0.01))
+		}
+
+		// 2. RMS
+		state.rms = math.sqrt(avg)
+
+		// 3. Bass
+		bass_sum: f32 = 0
+		for i := 0; i < 8; i += 1 {bass_sum += state.fft[i]}
+		state.bass = bass_sum / 8.0
 
 		if read_result != .SUCCESS || frames_read < auto_cast frame_count {
 			context = runtime.default_context()
@@ -221,21 +272,11 @@ toggle_playback :: proc(state: ^AudioState) {
 	sync.mutex_lock(&state.mutex)
 	defer sync.mutex_unlock(&state.mutex)
 
-	// if state.device != nil {
-	// 	if state.is_playing {
-	// 		ma.device_stop(state.device)
-	// 		state.is_playing = false
-	// 	} else {
-	// 		ma.device_start(state.device)
-	// 		state.is_playing = true
-	// 	}
-	// }
-
 	if state.device != nil {
 		if state.is_playing {
 			ma.device_stop(state.device)
 			state.is_playing = false
-			state.was_paused = true // ✅ Mark it was a user pause
+			state.was_paused = true
 		} else {
 			ma.device_start(state.device)
 			state.is_playing = true

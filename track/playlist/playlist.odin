@@ -1,5 +1,7 @@
 package playlist
 
+import taglib "../../taglib-odin"
+import common "../common"
 import "base:runtime"
 import "core:encoding/xml"
 import "core:fmt"
@@ -9,14 +11,14 @@ import "core:strings"
 import "core:sync"
 
 
-Playlist_Entry :: struct {
-	src:         string,
-	albumTitle:  string,
-	albumArtist: string,
-	trackTitle:  string,
-	trackArtist: string,
-	duration:    string,
-}
+// Playlist_Entry :: struct {
+// 	src:         string,
+// 	albumTitle:  string,
+// 	albumArtist: string,
+// 	trackTitle:  string,
+// 	trackArtist: string,
+// 	duration:    string,
+// }
 
 
 Playlist_Metadata :: struct {
@@ -29,7 +31,7 @@ Playlist_Metadata :: struct {
 
 Playlist :: struct {
 	meta:    Playlist_Metadata,
-	entries: [dynamic]Playlist_Entry,
+	entries: [dynamic]common.FileEntry,
 }
 
 
@@ -38,6 +40,17 @@ PlaylistTypes :: enum {
 	Local,
 }
 
+is_valid_path :: proc(path: string) -> bool {
+	for r in path {
+		if r < 32 || r > 126 {
+			// Skip non-ASCII printable characters that might cause issues
+			if r != '/' && r != '\\' && r != ':' {
+				return false
+			}
+		}
+	}
+	return true
+}
 
 load_zpl_playlist :: proc(path: string) -> (playlist: Playlist, ok: bool) {
 	doc, err := xml.load_from_file(path)
@@ -48,7 +61,7 @@ load_zpl_playlist :: proc(path: string) -> (playlist: Playlist, ok: bool) {
 
 	playlist_res: Playlist
 
-	entries: [dynamic]Playlist_Entry
+	entries: [dynamic]common.FileEntry
 
 	root_id: u32 = 0
 	smil_id, smil_found := xml.find_child_by_ident(doc, root_id, "smil", 1)
@@ -136,21 +149,49 @@ load_zpl_playlist :: proc(path: string) -> (playlist: Playlist, ok: bool) {
 				child := &doc.elements[child_id]
 
 				if child.ident == "media" {
-					entry := Playlist_Entry{}
+					entry := common.FileEntry{}
+					file: taglib.TagLib_File
 					for attr in child.attribs {
+						if attr.key == "src" {
+							file = taglib.file_new(fmt.ctprint(attr.val))
+							// fmt.println("Found srcs: ", attr.val)
+						}
+
+
+						// Get the tag information
+						// tag := taglib.file_tag(file)
+						// defer taglib.file_free(file) // memory sky rockets when not cleaned up
+						// if is_valid_path(path) {
+						// 	entry.metadata.title = strings.clone_from_cstring(
+						// 		taglib.tag_title(tag),
+						// 	)
+						// 	entry.metadata.artist =
+						// 		len(taglib.tag_artist(tag)) > 0 ? strings.clone_from_cstring(taglib.tag_artist(tag)) : "Unknown Artist"
+						// 	entry.metadata.year = fmt.tprintf("%d", taglib.tag_year(tag))
+						// 	entry.metadata.album =
+						// 		len(taglib.tag_album(tag)) > 0 ? strings.clone_from_cstring(taglib.tag_album(tag)) : "Unknown Album"
+						// 	entry.metadata.genre =
+						// 		len(taglib.tag_genre(tag)) > 0 ? strings.clone_from_cstring(taglib.tag_genre(tag)) : "Unknown Genre"
+						// 	entry.valid_metadata = true
+
+						// } else {
+						// 	entry.valid_metadata = false
+						// }
+
 						switch attr.key {
 						case "src":
-							entry.src = attr.val
+							entry.fullpath = fmt.ctprint(attr.val)
 						case "albumTitle":
-							entry.albumTitle = attr.val
+							// entry.metadata.album = len(taglib.tag_album(tag)) > 0 ? strings.clone_from_cstring(taglib.tag_album(tag)) : "Unknown Album"
+							entry.metadata.album = fmt.ctprint(attr.val)
 						case "albumArtist":
-							entry.albumArtist = attr.val
+							entry.metadata.artist = fmt.ctprint(attr.val)
 						case "trackTitle":
-							entry.trackTitle = attr.val
+							entry.metadata.title = fmt.ctprint(attr.val)
 						case "trackArtist":
-							entry.trackArtist = attr.val
+							entry.metadata.artist = fmt.ctprint(attr.val)
 						case "duration":
-							entry.duration = attr.val
+						// entry.metadata. = attr.val
 						}
 					}
 					append(&entries, entry)

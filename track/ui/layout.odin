@@ -1,15 +1,15 @@
 package ui
 
 
+import im "../../odin-imgui"
+import "../../odin-imgui/imgui_impl_glfw"
+import "../../odin-imgui/imgui_impl_opengl3"
+import common "../common"
 import "core:fmt"
 import "core:os"
 import "core:strconv"
 import "core:strings"
 import image "vendor:stb/image"
-
-import im "../../odin-imgui"
-import "../../odin-imgui/imgui_impl_glfw"
-import "../../odin-imgui/imgui_impl_opengl3"
 
 // import audio "audio_state"
 import app "../app"
@@ -36,11 +36,9 @@ color_vec4_to_u32 :: proc(c: Vec4) -> u32 {
 
 
 top_right_panel :: proc(
-	bolt_font: ^im.Font,
-	shared_files_mutex: ^sync.Mutex,
-	all_paths: ^[dynamic]app.FileEntry,
-	audio_state: ^audio.AudioState,
 	app_state: ^app.AppState,
+	bolt_font: ^im.Font,
+	audio_state: ^audio.AudioState,
 	top_h, third_w, right_w: f32,
 ) {
 	im.SetNextWindowPos(im.Vec2{third_w, 0})
@@ -61,35 +59,38 @@ top_right_panel :: proc(
 
 
 		// if im.Begin("##top-right", nil, {.NoResize}) {
-		sync.mutex_lock(shared_files_mutex)
+		sync.mutex_lock(&app_state.mutex)
 
 		size := im.GetContentRegionAvail()
-		im.BeginChild("ListRegion", size) // border=true
+		im.BeginChild("##list-region", size) // border=true
 
-		for v, i in all_paths {
+		for v, i in app_state.all_songs {
 			is_selected := app_state.current_item_playing_index == i
-
+			// fmt.println(v)
 			im.BeginGroup()
 			im.Spacing()
 
-			bg := color_vec4_to_u32({0.9, 0.2, 0.2, 1})
+			// 	bg := color_vec4_to_u32({0.9, 0.2, 0.2, 1})
 
-			if CustomSelectable(v.name, is_selected, 0, {}, {size.x, 30}, {50, 10}) {
+			// 	// if CustomSelectable(v.name, is_selected, 0, {}, {size.x, 30}, {50, 10}) {
+			// fmt.println("Have item: ", v)
+			if DrawMusicInformationBar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
 
 
-				fmt.printf("[App] Playing: %s\n", v.name)
-				fmt.println(i, app_state.current_item_playing_index, is_selected)
-				// set_current_item(app_state, v)
+						fmt.printf("[TRACK::App] Playing: %s\n", v.name)
+						fmt.println(i, app_state.current_item_playing_index, is_selected)
+						// set_current_item(app_state, v)
 
-				sync.mutex_lock(&app_state.mutex)
-				app_state.all_songs_item_playling = v
-				app_state.playlist_item_clicked = true
-				app_state.current_item_playing_index = i
-				app_state.all_songs = all_paths^ //only changed when user clicks on an item in the playlist
-				sync.mutex_unlock(&app_state.mutex)
-
-				audio.update_path(audio_state, v.fullpath)
-				audio.create_audio_play_thread(audio_state)
+						// sync.mutex_lock(&app_state.mutex)
+						app_state.all_songs_item_playling = v
+						app_state.playlist_item_clicked = true
+						app_state.current_item_playing_index = i
+						// app_state.all_songs = all_paths^ //only changed when user clicks on an item in the playlist
+						// sync.mutex_unlock(&app_state.mutex)
+						// fmt.println("This is the filepath: ", v.fullpath)
+						// audio.update_path(audio_state, strings.clone_to_cstring(v.dir))
+						audio.update_path(audio_state, v.fullpath)
+						audio.create_audio_play_thread(audio_state)
 			}
 
 			im.EndGroup()
@@ -97,14 +98,14 @@ top_right_panel :: proc(
 
 
 		im.EndChild()
-		sync.mutex_unlock(shared_files_mutex)
+		sync.mutex_unlock(&app_state.mutex)
 	}
 	im.End()
 
 }
 bottom_panel :: proc(
 	app_state: ^app.AppState,
-	display_songs: ^[dynamic]app.FileEntry,
+	display_songs: ^[dynamic]common.FileEntry,
 	audio_state: ^audio.AudioState,
 	top_h, screen_w, third_h: f32,
 ) {
@@ -183,9 +184,14 @@ bottom_panel :: proc(
 		audio_progress_bar_and_volume_bar(audio_state)
 
 		im.Dummy({0, 20})
-		// im.Text(
-		// 	app_state.current_item_playing_index == -1 ? "" : display_songs[app_state.current_item_playing_index].name,
-		// )
+		sync.mutex_lock(&app_state.mutex)
+		im.Text(
+			app_state.current_item_playing_index == -1 ? "" : display_songs[app_state.current_item_playing_index].metadata.title,
+		)
+		im.Text(
+			app_state.current_item_playing_index == -1 ? "" : display_songs[app_state.current_item_playing_index].metadata.artist,
+		)
+		sync.mutex_unlock(&app_state.mutex)
 	}
 	im.End()
 

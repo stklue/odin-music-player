@@ -1,3 +1,2 @@
 run:
-	odin build track -file -out:track-out.exe -o:speed
-
+	odin build track -debug -file -out:track-out.exe -o:speed

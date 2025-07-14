@@ -2,6 +2,8 @@
 package ui
 
 
+import app "../app"
+import common "../common"
 import "core:fmt"
 import "core:os"
 import "core:strconv"
@@ -79,6 +81,115 @@ CustomSelectable :: proc(
 	im.DrawList_AddText(draw_list, text_pos, color_vec4_to_u32({1, 1, 1, 1}), label)
 
 	im.DrawList_ChannelsMerge(draw_list)
+	return is_clicked
+}
+
+
+// draw music information bar
+DrawMusicInformationBar :: proc(
+	file_entry: common.FileEntry,
+	selected: bool,
+	// bg_color: u32,
+	flags: im.SelectableFlags,
+	size: im.Vec2,
+	padding: im.Vec2,
+) -> bool {
+	draw_list := im.GetWindowDrawList()
+	pos := im.GetCursorScreenPos()
+	im.DrawList_ChannelsSplit(draw_list, 2)
+
+
+	rounding: f32 = 6.0
+
+	// === Compute full padded size ===
+	full_size := im.Vec2{size.x + padding.x * 2, size.y + padding.y * 2}
+
+	// === Input area ===
+	im.DrawList_ChannelsSetCurrent(draw_list, 1)
+	// label := file_entry.fullpath // Use filename as the unique ID
+	label := fmt.ctprintf("##track_%s",file_entry.fullpath)
+
+	im.InvisibleButton(label, full_size)
+	is_hovered := im.IsItemHovered()
+	is_clicked := im.IsItemClicked()
+
+	// === Background draw ===
+	im.DrawList_ChannelsSetCurrent(draw_list, 0)
+	min := pos
+	max := pos + full_size
+
+	color: u32
+
+	if selected {
+		color = color_vec4_to_u32({0.8, 0.2, 0.6, 0.35})
+	} else if is_hovered {
+		color = color_vec4_to_u32({0.6, 0.1, 0.4, 0.25})
+	} else {
+		color = color_vec4_to_u32({0.5, 0.0, 0.3, 0.15})
+	}
+
+
+	im.DrawList_AddRectFilled(draw_list, min, max, color, rounding)
+
+	// === Calculate section widths ===
+	content_width := size.x
+	section_widths := [5]f32 {
+		// content_width * 0.25,  // Filename - 25%
+		content_width * 0.30, // Title - 25%
+		content_width * 0.25, // Artist - 20%
+		content_width * 0.15, // Album - 15%
+		content_width * 0.15, // Year - 10%
+		content_width * 0.15, // Duration - 5%
+	}
+
+	// === Draw text in sections ===\
+
+	texts := [5]cstring {
+		file_entry.metadata.title,
+		file_entry.metadata.artist,
+		file_entry.metadata.album,
+		file_entry.metadata.year,
+		file_entry.metadata.genre,
+	}
+
+	// fmt.println("Writing name: ", texts)
+
+	text_color := color_vec4_to_u32({1, 1, 1, 1})
+	current_x := pos.x + padding.x
+
+	for i in 0 ..< 5 {
+		if texts[i] != nil && len(string(texts[i])) > 0 {
+			// Calculate text position within this section
+			text_size := im.CalcTextSize(texts[i], nil, false, section_widths[i])
+			text_pos := im.Vec2{current_x, pos.y + padding.y + (size.y - text_size.y) / 2.0}
+
+			// Clip text to section width
+			section_max := im.Vec2 {
+				current_x + section_widths[i] - 5, // Small margin between sections
+				pos.y + full_size.y,
+			}
+
+			im.DrawList_PushClipRect(draw_list, im.Vec2{current_x, pos.y}, section_max, true)
+			if selected {
+				im.DrawList_AddText(
+					draw_list,
+					text_pos,
+					color_vec4_to_u32({0.9, 0.3, 0.3, 1}),
+					texts[i],
+				)
+			} else {
+				im.DrawList_AddText(draw_list, text_pos, text_color, texts[i])
+			}
+
+			im.DrawList_PopClipRect(draw_list)
+		}
+
+		current_x += section_widths[i]
+	}
+
+	im.DrawList_ChannelsMerge(draw_list)
+
+	// delete(title)
 	return is_clicked
 }
 
@@ -185,8 +296,8 @@ clamp :: proc(value, min_value, max_value: f32) -> f32 {
 draw_custom_header :: proc(title: cstring) {
 	header_height: f32 = 50.0
 	header_color := color_vec4_to_u32({0.1, 0.1, 0.1, 1.0}) // purple-ish
-				// color = color_vec4_to_u32({0.6, 0.1, 0.4, 0.25})
-// color_vec4_to_u32({0.8, 0.2, 0.6, 0.35})
+	// color = color_vec4_to_u32({0.6, 0.1, 0.4, 0.25})
+	// color_vec4_to_u32({0.8, 0.2, 0.6, 0.35})
 
 	text_color := color_vec4_to_u32({1, 1, 1, 1})
 

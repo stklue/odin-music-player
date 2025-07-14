@@ -2,6 +2,8 @@ package main
 
 DISABLE_DOCKING :: #config(DISABLE_DOCKING, true)
 
+import taglib "../taglib-odin"
+import common "common"
 import "core:fmt"
 import "core:os"
 import "core:strconv"
@@ -70,26 +72,40 @@ main :: proc() {
 		30,
 	)
 
-	// C:\Projects\track_player\track\fonts\Roboto_Condensed\static\RobotoCondensed-Bold.ttf
-
 	// init app state
 	app.g_app = app.init_app()
-	// app.g_app = app.g_app
-	// Load saved state
-	// state := read_playback_state("playback_state.json")
-	// fmt.printf("Last played song: %s\n", state.last_song_path)
-
-	// // Update state when song changes
-	// state.last_song_path = "music/cool_song.mp3"
-	// state.last_playlist_path = "playlists/favs.json"
-	// state.volume = 0.75
-	// state.playback_seconds = 42.3
-
-	// save_playback_state("playback_state.json", state)
 	root := "C:/Users/St.Klue/Music"
+	stop_watch: time.Stopwatch
+	time.stopwatch_start(&stop_watch)
+	// thread.create_and_start_with_poly_data(root, app.search_all_files)
+	// app.search_all_files_archive(root)
+	app.scan_all_files(root)
 
-	app.search_all_files(&app.g_app.all_songs, root)
-	fmt.printfln("Number  of files found: %d", len(app.g_app.all_songs))
+	// (root)
+	// app.search_all_files_threaded(&app.g_app.all_songs, root, 4)
+	time.stopwatch_stop(&stop_watch)
+	// fmt.println(app.g_app.all_songs)
+	fmt.printfln(
+		"Found %d/%d files in %v",
+		len(app.g_app.all_songs),
+		app.g_app.total_files,
+		stop_watch._accumulation,
+	)
+
+	// app.write_metadata_to_txt(app.g_app.all_songs)
+
+
+	if app.g_app.taglib_file_count > 0 {
+		avg :=
+			time.duration_milliseconds(app.g_app.taglib_total_duration) /
+			f64(app.g_app.taglib_file_count)
+		total := app.g_app.taglib_total_duration
+		fmt.printfln("TagLib processed %d files", app.g_app.taglib_file_count)
+		fmt.printfln("Total TagLib time: %.3f", total)
+		fmt.printfln("Average per file: %.3fms", avg)
+	} else {
+		fmt.println("No .mp3 files processed with TagLib.")
+	}
 
 	//  init audio stuff
 	// global audio state
@@ -109,6 +125,7 @@ main :: proc() {
 		style.Colors[im.Col.WindowBg].w = 1
 	}
 
+
 	ui.set_red_black_theme()
 	imgui_impl_glfw.InitForOpenGL(window, true)
 	defer imgui_impl_glfw.Shutdown()
@@ -116,18 +133,19 @@ main :: proc() {
 	defer imgui_impl_opengl3.Shutdown()
 
 	// globals
-	shared_files: [dynamic]app.FileEntry
-	shared_files_mutex: sync.Mutex
+	// shared_files: [dynamic]common.FileEntry
+	// shared_files_mutex: sync.Mutex
 
-	search_results: [dynamic]app.FileEntry
+	search_results: [dynamic]common.FileEntry
+	search_results2: [dynamic]common.SearchItem
 	search_mutex: sync.Mutex
 
 	// loading music files into memory
-	file_thread := thread.create_and_start_with_poly_data2(
-		&shared_files_mutex,
-		&shared_files,
-		app.load_files_thread_proc,
-	)
+	// file_thread := thread.create_and_start_with_poly_data2(
+	// 	&shared_files_mutex,
+	// 	&shared_files,
+	// 	app.load_files_thread_proc,
+	// )
 
 	// loading playlists
 	playlists_thread := thread.create_and_start_with_poly_data2(
@@ -139,7 +157,8 @@ main :: proc() {
 
 	//  gui state
 	my_buffer: [256]u8
-
+	// Initialize once at startup
+	ui.init_visualizer()
 
 	for !glfw.WindowShouldClose(window) {
 		glfw.PollEvents()
@@ -164,9 +183,9 @@ main :: proc() {
 		audio.update_audio(audio_state)
 
 		// ========= UI KEY PRESSES ===========
-		if !io.WantCaptureKeyboard {
-			if im.IsKeyPressed(.Space, false) {
-				fmt.println("You pressed on the space button")
+		if io.KeysDown[im.Key.Space] && im.IsKeyPressed(.Space) {
+			// Check if any text input is currently active
+			if !im.IsAnyItemActive() {
 				audio.toggle_playback(audio_state)
 			}
 		}
@@ -194,7 +213,9 @@ main :: proc() {
 		// main window 
 		im.SetNextWindowPos(im.Vec2{0, 0}, .Appearing)
 		im.SetNextWindowSize(viewport.Size, .Appearing)
+
 		if im.Begin("##track-player", nil, {.NoResize, .NoCollapse, .NoMove, .MenuBar}) {
+
 			// Top Left
 			im.SetNextWindowPos(im.Vec2{0, 0})
 			im.SetNextWindowSize(im.Vec2{third_w, top_h})
@@ -213,121 +234,174 @@ main :: proc() {
 			style := im.GetStyle()
 			style.ChildRounding = 10
 			// style.WindowRounding = 40
-			if im.Begin("##top-left", nil, {.NoTitleBar, .NoResize}) {
-				im.Dummy({0, 20})
-				offset_x: f32 = 35
-				size := im.GetContentRegionAvail()
-				ui.CustomSearchBar("##search-bar", &my_buffer, {size.x - offset_x, 40})
+			// if im.Begin("##top-left", nil, {.NoTitleBar, .NoResize}) {
+			// 	im.Dummy({0, 20})
+			// 	offset_x: f32 = 35
+			// 	size := im.GetContentRegionAvail()
+			// 	ui.CustomSearchBar("##search-bar", &my_buffer, {size.x - offset_x, 40})
 
-				if im.IsItemEdited() {
-					thread.create_and_start_with_poly_data5(
-						app.g_app,
-						strings.clone_from_cstring(cast(cstring)(&my_buffer[0])),
-						&app.g_app.all_songs,
-						&search_results,
-						&search_mutex,
-						app.search_song,
-					)
-				}
-				
-				sync.mutex_lock(&app.g_app.mutex)
+			// 	if im.IsItemEdited() {
+			// 		thread.create_and_start_with_poly_data5(
+			// 			app.g_app,
+			// 			strings.clone_from_cstring(cast(cstring)(&my_buffer[0])),
+			// 			&app.g_app.all_songs,
+			// 			&search_results2,
+			// 			&search_mutex,
+			// 			// app.search_song,
+			// 			app.search_song_2,
+			// 		)
+			// 	}
 
-
-				im.BeginChild("##list-region", size, {.AutoResizeX}) // border=true
-				im.Dummy({0, 30})
-				if ui.CustomButton("All Songs", {}, {size.x - offset_x, 30}, {10, 10}) {
-					if app.g_app.playlist_index != -1 {
-						app.g_app.playlist_index = -1
-						app.g_app.current_view_index = 0
-						app.g_app.playlist_item_clicked = false
+			// 	sync.mutex_lock(&app.g_app.mutex)
 
 
-						//! TODO: SHOULD CHANGE THE FILES PROC TO BE THE ALL FILES PROC 
-						clear(&app.g_app.all_songs)
-						thread.create_and_start_with_poly_data2(
-							&app.g_app.all_songs, // &shared_files_mutex,
-							root,
-							app.search_all_files,
-						)
-					}
-				}
-
-				im.Separator()
-
-				// Show searches or the the initial playlist items
-				if len(cast(cstring)(&my_buffer[0])) == 0 {
-					for v, i in app.g_app.playlists {
-						currently_selected_playlist := app.g_app.playlist_index == i
-						if ui.CustomSelectable(
-							strings.clone_to_cstring(v.meta.title),
-							currently_selected_playlist,
-							1,
-							{},
-							{size.x - offset_x, 30},
-							{10, 10},
-						) {
-							// current_pl_item = i
-							app.g_app.playlist_index = i
-							app.g_app.current_view_index = 1 // should view the playlist
-							// app.g_app.current_item_playing_index = -1 // 
+			// 	im.BeginChild("##list-region", size, {.AutoResizeX}) // border=true
+			// 	im.Dummy({0, 30})
+			// 	if ui.CustomButton("All Songs", {}, {size.x - offset_x, 30}, {10, 10}) {
+			// 		if app.g_app.playlist_index != -1 {
+			// 			app.g_app.playlist_index = -1
+			// 			app.g_app.current_view_index = 0
+			// 			app.g_app.playlist_item_clicked = false
 
 
-							thread.create_and_start_with_poly_data4(
-								&shared_files_mutex,
-								&app.g_app.clicked_playlist,
-								i,
-								&app.g_app.playlists,
-								app.load_files_from_pl_thread,
-							)
-						}
-					}
-				} else {
-					if len(search_results) > 0 {
-						for search_result, i in search_results {
-							currently_selected_search_result := app.g_app.search_result_index == i
+			// 			//! TODO: SHOULD CHANGE THE FILES PROC TO BE THE ALL FILES PROC 
+			// 			clear(&app.g_app.all_songs)
+			// 			thread.create_and_start_with_poly_data(
+			// 				root, // &shared_files_mutex,
+			// 				// app.search_all_files_archive,
+			// 				app.scan_all_files,
+			// 			)
+			// 		}
+			// 	}
 
-							im.BeginGroup()
+			// 	im.Separator()
 
-							if ui.CustomSelectable(
-								search_result.name,
-								currently_selected_search_result,
-								1,
-								{},
-								{size.x - offset_x, 30},
-								{10, 10},
-							) {
-								app.g_app.search_result_index = i
-								audio.update_path(audio_state, search_result.fullpath)
-								audio.create_audio_play_thread(audio_state)
-							}
-							im.EndGroup()
-						}
-					}
-				}
-				im.EndChild()
-				sync.mutex_unlock(&app.g_app.mutex)
-			}
-			im.End()
+			// 	// Show searches or the the initial playlist items
+			// 	if len(cast(cstring)(&my_buffer[0])) == 0 {
+			// 		for v, i in app.g_app.playlists {
+			// 			currently_selected_playlist := app.g_app.playlist_index == i
+			// 			if ui.CustomSelectable(
+			// 				fmt.ctprint(v.meta.title),
+			// 				currently_selected_playlist,
+			// 				1,
+			// 				{},
+			// 				{size.x - offset_x, 30},
+			// 				{10, 10},
+			// 			) {
+			// 				// current_pl_item = i
+			// 				app.g_app.playlist_index = i
+			// 				app.g_app.current_view_index = 1 // should view the playlist
+			// 				// app.g_app.current_item_playing_index = -1 // 
+
+
+			// 				thread.create_and_start_with_poly_data4(
+			// 					&app.g_app.mutex,
+			// 					&app.g_app.clicked_playlist,
+			// 					i,
+			// 					&app.g_app.playlists,
+			// 					app.load_files_from_pl_thread,
+			// 				)
+			// 			}
+			// 		}
+			// 	} else {
+			// 		if len(search_results2) > 0 && len(search_results) < 100 {
+			// 			for search_result, i in search_results2 {
+			// 				currently_selected_search_result := app.g_app.search_result_index == i
+			// 				// fmt.println(search_result.)
+			// 				if len(search_results2) > 0 && len(search_results2) < 5 {
+			// 					// fmt.println(search_result)
+			// 				}
+			// 				switch search_result.kind {
+			// 				case .Album:
+			// 					// fmt.println("Testing", search_result)
+			// 					if ui.CustomSelectable(
+			// 						search_result.label,
+			// 						currently_selected_search_result,
+			// 						1,
+			// 						{},
+			// 						{size.x - offset_x, 30},
+			// 						{10, 10},
+			// 					) {}
+			// 				case .Artist:
+			// 					if ui.CustomSelectable(
+			// 						search_result.label,
+			// 						currently_selected_search_result,
+			// 						1,
+			// 						{},
+			// 						{size.x - offset_x, 30},
+			// 						{10, 10},
+			// 					) {}
+			// 				case .Title:
+			// 					if ui.CustomSelectable(
+			// 						search_result.label,
+			// 						currently_selected_search_result,
+			// 						1,
+			// 						{},
+			// 						{size.x - offset_x, 30},
+			// 						{10, 10},
+			// 					) {
+			// 						#partial switch file_type in search_result.files {
+			// 						case common.FileEntry:
+			// 							audio.update_path(audio_state, file_type.fullpath)
+			// 							audio.create_audio_play_thread(audio_state)
+			// 						}
+			// 					}
+
+			// 				}
+			// 				im.BeginGroup()
+			// 				// switch search_result.kind {}
+			// 				// if ui.CustomSelectable(
+			// 				// 	strings.clone_to_cstring(),
+			// 				// 	currently_selected_search_result,
+			// 				// 	1,
+			// 				// 	{},
+			// 				// 	{size.x - offset_x, 30},
+			// 				// 	{10, 10},
+			// 				// ) {
+			// 				// app.g_app.search_result_index = i
+			// 				// switch file_type in search_result.files {
+			// 				// case common.FileEntry:
+			// 				// 	// just play this audio
+			// 				// 	audio.update_path(audio_state, file_type.fullpath)
+			// 				// 	audio.create_audio_play_thread(audio_state)
+			// 				// case [dynamic]common.FileEntry:
+			// 				// 	app.g_app.show_search_results = true
+			// 				// }
+
+			// 				// audio.update_path(audio_state, search_result..fullpath)
+			// 				// audio.create_audio_play_thread(audio_state)
+			// 				// }
+			// 				im.EndGroup()
+			// 			}
+			// 		}
+			// 	}
+			// 	im.EndChild()
+			// 	sync.mutex_unlock(&app.g_app.mutex)
+			// }
+			// im.End()
+			
+
 			im.PopStyleColor(4)
 
 			// Top Right
-			display_songs := app.g_app.current_view_index == 0 ? app.g_app.all_songs : app.g_app.clicked_playlist
-			ui.top_right_panel(
-				bold_header_font,
-				&shared_files_mutex,
-				&display_songs,
-				audio_state,
-				app.g_app,
-				top_h,
-				third_w,
-				right_w,
-			)
+			display_songs :=
+				app.g_app.current_view_index == 0 ? app.g_app.all_songs : app.g_app.clicked_playlist
+			ui.top_right_panel(app.g_app, bold_header_font, audio_state, top_h, third_w, right_w)
 			// Bottom
-			different_playlist_songs := app.g_app.playlist_item_clicked ? display_songs : app.g_app.all_songs  
-			ui.bottom_panel(app.g_app, &different_playlist_songs, audio_state, top_h, screen_w, third_h)
+			different_playlist_songs :=
+				app.g_app.playlist_item_clicked ? display_songs : app.g_app.all_songs
+			ui.bottom_panel(
+				app.g_app,
+				&different_playlist_songs,
+				audio_state,
+				top_h,
+				screen_w,
+				third_h,
+			)
+
+			ui.render_audio_visualizer(audio_state)
 		}
 		im.End()
-
 		im.PopStyleVar(2)
 
 		im.Render()
@@ -345,6 +419,7 @@ main :: proc() {
 		}
 
 		glfw.SwapBuffers(window)
+		free_all(context.temp_allocator)
 	}
 
 	// Cleanup audio on exit
