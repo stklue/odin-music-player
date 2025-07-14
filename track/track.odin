@@ -125,6 +125,11 @@ main :: proc() {
 		style.Colors[im.Col.WindowBg].w = 1
 	}
 
+	style := im.GetStyle()
+	style.Colors[im.Col.ScrollbarBg] = im.Vec4{0.10, 0.12, 0.18, 0.25}
+	style.Colors[im.Col.ScrollbarGrab] = im.Vec4{0.20, 0.50, 0.90, 0.35}
+	style.Colors[im.Col.ScrollbarGrabHovered] = im.Vec4{0.30, 0.60, 1.00, 0.45}
+	style.Colors[im.Col.ScrollbarGrabActive] = im.Vec4{0.45, 0.80, 1.00, 0.60}
 
 	ui.set_red_black_theme()
 	imgui_impl_glfw.InitForOpenGL(window, true)
@@ -189,6 +194,17 @@ main :: proc() {
 				audio.toggle_playback(audio_state)
 			}
 		}
+		// shortcut
+		if im.IsKeyPressed(.S, true) {
+			if !im.IsAnyItemActive() {
+				app.g_app.show_visualizer = !app.g_app.show_visualizer
+			}
+		}
+		// if im.IsKeyPressed(.F) && !io.WantCaptureKeyboard {
+		// 	//  || io.KeySuper) {
+		// 	fmt.println("pressed control F")
+		// 	im.SetKeyboardFocusHere()
+		// }
 
 		if im.IsKeyPressed(.RightArrow, true) {
 			audio.skip_2s_forward(audio_state)
@@ -207,207 +223,59 @@ main :: proc() {
 			}
 		}
 
+		// Top Left
+		im.SetNextWindowPos(im.Vec2{0, 0})
+		im.SetNextWindowSize(im.Vec2{third_w, top_h})
 
-		im.PushStyleVar(im.StyleVar.WindowRounding, 0)
-		im.PushStyleVar(im.StyleVar.WindowBorderSize, 0)
-		// main window 
-		im.SetNextWindowPos(im.Vec2{0, 0}, .Appearing)
-		im.SetNextWindowSize(viewport.Size, .Appearing)
-
-		if im.Begin("##track-player", nil, {.NoResize, .NoCollapse, .NoMove, .MenuBar}) {
-
-			// Top Left
-			im.SetNextWindowPos(im.Vec2{0, 0})
-			im.SetNextWindowSize(im.Vec2{third_w, top_h})
-
-			im.PushStyleColor(im.Col.ScrollbarBg, ui.color_vec4_to_u32({0.2, 0.0, 0.2, 0.25})) // dim purple
-			im.PushStyleColor(im.Col.ScrollbarGrab, ui.color_vec4_to_u32({0.5, 0.1, 0.5, 0.35})) // soft purple grab
-			im.PushStyleColor(
-				im.Col.ScrollbarGrabHovered,
-				ui.color_vec4_to_u32({0.7, 0.2, 0.7, 0.45}),
-			) // bright hover glow
-			im.PushStyleColor(
-				im.Col.ScrollbarGrabActive,
-				ui.color_vec4_to_u32({0.9, 0.3, 0.9, 0.55}),
-			) // vivid active magenta
-
-			style := im.GetStyle()
-			style.ChildRounding = 10
-			// style.WindowRounding = 40
-			// if im.Begin("##top-left", nil, {.NoTitleBar, .NoResize}) {
-			// 	im.Dummy({0, 20})
-			// 	offset_x: f32 = 35
-			// 	size := im.GetContentRegionAvail()
-			// 	ui.CustomSearchBar("##search-bar", &my_buffer, {size.x - offset_x, 40})
-
-			// 	if im.IsItemEdited() {
-			// 		thread.create_and_start_with_poly_data5(
-			// 			app.g_app,
-			// 			strings.clone_from_cstring(cast(cstring)(&my_buffer[0])),
-			// 			&app.g_app.all_songs,
-			// 			&search_results2,
-			// 			&search_mutex,
-			// 			// app.search_song,
-			// 			app.search_song_2,
-			// 		)
-			// 	}
-
-			// 	sync.mutex_lock(&app.g_app.mutex)
+		im.PushStyleColor(im.Col.ScrollbarBg, ui.color_vec4_to_u32({0.10, 0.12, 0.18, 0.25})) // dark blue base
+		im.PushStyleColor(im.Col.ScrollbarGrab, ui.color_vec4_to_u32({0.20, 0.50, 0.90, 0.35})) // cool blue
+		im.PushStyleColor(
+			im.Col.ScrollbarGrabHovered,
+			ui.color_vec4_to_u32({0.30, 0.60, 1.00, 0.45}),
+		) // brighter on hover
+		im.PushStyleColor(
+			im.Col.ScrollbarGrabActive,
+			ui.color_vec4_to_u32({0.45, 0.80, 1.00, 0.60}),
+		) // vivid on drag
 
 
-			// 	im.BeginChild("##list-region", size, {.AutoResizeX}) // border=true
-			// 	im.Dummy({0, 30})
-			// 	if ui.CustomButton("All Songs", {}, {size.x - offset_x, 30}, {10, 10}) {
-			// 		if app.g_app.playlist_index != -1 {
-			// 			app.g_app.playlist_index = -1
-			// 			app.g_app.current_view_index = 0
-			// 			app.g_app.playlist_item_clicked = false
+		style := im.GetStyle()
+		style.ChildRounding = 10
+		// style.WindowRounding = 40
+		ui.top_left_panel(
+			app.g_app,
+			&search_results2,
+			&search_mutex,
+			root,
+			audio_state,
+			&my_buffer,
+		)
 
+		im.PopStyleColor(4)
 
-			// 			//! TODO: SHOULD CHANGE THE FILES PROC TO BE THE ALL FILES PROC 
-			// 			clear(&app.g_app.all_songs)
-			// 			thread.create_and_start_with_poly_data(
-			// 				root, // &shared_files_mutex,
-			// 				// app.search_all_files_archive,
-			// 				app.scan_all_files,
-			// 			)
-			// 		}
-			// 	}
+		// Top Right 
+		display_songs :=
+			app.g_app.current_view_index == 0 ? app.g_app.all_songs : app.g_app.clicked_playlist
+		ui.top_right_panel(app.g_app, bold_header_font, audio_state, top_h, third_w, right_w)
+		// Bottom
+		different_playlist_songs :=
+			app.g_app.playlist_item_clicked ? display_songs : app.g_app.all_songs
+		ui.bottom_panel(
+			app.g_app,
+			&different_playlist_songs,
+			audio_state,
+			top_h,
+			screen_w,
+			third_h,
+		)
 
-			// 	im.Separator()
+		// ui.render_audio_visualizer(audio_state)
 
-			// 	// Show searches or the the initial playlist items
-			// 	if len(cast(cstring)(&my_buffer[0])) == 0 {
-			// 		for v, i in app.g_app.playlists {
-			// 			currently_selected_playlist := app.g_app.playlist_index == i
-			// 			if ui.CustomSelectable(
-			// 				fmt.ctprint(v.meta.title),
-			// 				currently_selected_playlist,
-			// 				1,
-			// 				{},
-			// 				{size.x - offset_x, 30},
-			// 				{10, 10},
-			// 			) {
-			// 				// current_pl_item = i
-			// 				app.g_app.playlist_index = i
-			// 				app.g_app.current_view_index = 1 // should view the playlist
-			// 				// app.g_app.current_item_playing_index = -1 // 
-
-
-			// 				thread.create_and_start_with_poly_data4(
-			// 					&app.g_app.mutex,
-			// 					&app.g_app.clicked_playlist,
-			// 					i,
-			// 					&app.g_app.playlists,
-			// 					app.load_files_from_pl_thread,
-			// 				)
-			// 			}
-			// 		}
-			// 	} else {
-			// 		if len(search_results2) > 0 && len(search_results) < 100 {
-			// 			for search_result, i in search_results2 {
-			// 				currently_selected_search_result := app.g_app.search_result_index == i
-			// 				// fmt.println(search_result.)
-			// 				if len(search_results2) > 0 && len(search_results2) < 5 {
-			// 					// fmt.println(search_result)
-			// 				}
-			// 				switch search_result.kind {
-			// 				case .Album:
-			// 					// fmt.println("Testing", search_result)
-			// 					if ui.CustomSelectable(
-			// 						search_result.label,
-			// 						currently_selected_search_result,
-			// 						1,
-			// 						{},
-			// 						{size.x - offset_x, 30},
-			// 						{10, 10},
-			// 					) {}
-			// 				case .Artist:
-			// 					if ui.CustomSelectable(
-			// 						search_result.label,
-			// 						currently_selected_search_result,
-			// 						1,
-			// 						{},
-			// 						{size.x - offset_x, 30},
-			// 						{10, 10},
-			// 					) {}
-			// 				case .Title:
-			// 					if ui.CustomSelectable(
-			// 						search_result.label,
-			// 						currently_selected_search_result,
-			// 						1,
-			// 						{},
-			// 						{size.x - offset_x, 30},
-			// 						{10, 10},
-			// 					) {
-			// 						#partial switch file_type in search_result.files {
-			// 						case common.FileEntry:
-			// 							audio.update_path(audio_state, file_type.fullpath)
-			// 							audio.create_audio_play_thread(audio_state)
-			// 						}
-			// 					}
-
-			// 				}
-			// 				im.BeginGroup()
-			// 				// switch search_result.kind {}
-			// 				// if ui.CustomSelectable(
-			// 				// 	strings.clone_to_cstring(),
-			// 				// 	currently_selected_search_result,
-			// 				// 	1,
-			// 				// 	{},
-			// 				// 	{size.x - offset_x, 30},
-			// 				// 	{10, 10},
-			// 				// ) {
-			// 				// app.g_app.search_result_index = i
-			// 				// switch file_type in search_result.files {
-			// 				// case common.FileEntry:
-			// 				// 	// just play this audio
-			// 				// 	audio.update_path(audio_state, file_type.fullpath)
-			// 				// 	audio.create_audio_play_thread(audio_state)
-			// 				// case [dynamic]common.FileEntry:
-			// 				// 	app.g_app.show_search_results = true
-			// 				// }
-
-			// 				// audio.update_path(audio_state, search_result..fullpath)
-			// 				// audio.create_audio_play_thread(audio_state)
-			// 				// }
-			// 				im.EndGroup()
-			// 			}
-			// 		}
-			// 	}
-			// 	im.EndChild()
-			// 	sync.mutex_unlock(&app.g_app.mutex)
-			// }
-			// im.End()
-			
-
-			im.PopStyleColor(4)
-
-			// Top Right
-			display_songs :=
-				app.g_app.current_view_index == 0 ? app.g_app.all_songs : app.g_app.clicked_playlist
-			ui.top_right_panel(app.g_app, bold_header_font, audio_state, top_h, third_w, right_w)
-			// Bottom
-			different_playlist_songs :=
-				app.g_app.playlist_item_clicked ? display_songs : app.g_app.all_songs
-			ui.bottom_panel(
-				app.g_app,
-				&different_playlist_songs,
-				audio_state,
-				top_h,
-				screen_w,
-				third_h,
-			)
-
-			ui.render_audio_visualizer(audio_state)
-		}
-		im.End()
-		im.PopStyleVar(2)
 
 		im.Render()
 		display_w, display_h := glfw.GetFramebufferSize(window)
 		gl.Viewport(0, 0, display_w, display_h)
-		gl.ClearColor(0, 0, 0, 1)
+		gl.ClearColor(0.05, 0.08, 0.12, 1.0)
 		gl.Clear(gl.COLOR_BUFFER_BIT)
 		imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
 

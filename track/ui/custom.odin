@@ -23,10 +23,9 @@ import gl "vendor:OpenGL"
 import "vendor:glfw"
 import ma "vendor:miniaudio"
 
-CustomSelectable :: proc(
+draw_item_selectable :: proc(
 	label: cstring,
 	selected: bool,
-	bg_color: u32,
 	flags: im.SelectableFlags,
 	size: im.Vec2,
 	padding: im.Vec2,
@@ -53,25 +52,14 @@ CustomSelectable :: proc(
 	min := pos
 	max := pos + full_size
 
-	color := bg_color
-	if bg_color == 1 {
-		if selected {
-			color = color_vec4_to_u32({0.6, 0.1, 0.4, 0.25})
-		} else if is_hovered {
-			color = color_vec4_to_u32({0.6, 0.1, 0.4, 0.25})
-		} else {
-			color = color_vec4_to_u32({0.2, 0.2, 0.2, 0.1})
-		}
+	color: u32
 
-	} else {
-		if selected {
-			color = color_vec4_to_u32({0.8, 0.2, 0.6, 0.35})
-		} else if is_hovered {
-			color = color_vec4_to_u32({0.6, 0.1, 0.4, 0.25})
-		} else {
-			color = color_vec4_to_u32({0.5, 0.0, 0.3, 0.15})
-		}
+	if selected {
+		color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.25}) // Cyan-blue w/ low alpha
+	} else if is_hovered {
+		color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.12}) // Softer cyan-blue
 	}
+
 
 	im.DrawList_AddRectFilled(draw_list, min, max, color, rounding)
 
@@ -86,7 +74,7 @@ CustomSelectable :: proc(
 
 
 // draw music information bar
-DrawMusicInformationBar :: proc(
+draw_information_bar :: proc(
 	file_entry: common.FileEntry,
 	selected: bool,
 	// bg_color: u32,
@@ -107,7 +95,7 @@ DrawMusicInformationBar :: proc(
 	// === Input area ===
 	im.DrawList_ChannelsSetCurrent(draw_list, 1)
 	// label := file_entry.fullpath // Use filename as the unique ID
-	label := fmt.ctprintf("##track_%s",file_entry.fullpath)
+	label := fmt.ctprintf("##track_%s", file_entry.fullpath)
 
 	im.InvisibleButton(label, full_size)
 	is_hovered := im.IsItemHovered()
@@ -121,11 +109,11 @@ DrawMusicInformationBar :: proc(
 	color: u32
 
 	if selected {
-		color = color_vec4_to_u32({0.8, 0.2, 0.6, 0.35})
+		color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.25}) // Cyan-blue w/ low alpha
 	} else if is_hovered {
-		color = color_vec4_to_u32({0.6, 0.1, 0.4, 0.25})
+		color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.12}) // Softer cyan-blue
 	} else {
-		color = color_vec4_to_u32({0.5, 0.0, 0.3, 0.15})
+		color = color_vec4_to_u32(im.Vec4{0.1, 0.15, 0.2, 0.6}) // Very dark blue-gray background
 	}
 
 
@@ -174,7 +162,7 @@ DrawMusicInformationBar :: proc(
 				im.DrawList_AddText(
 					draw_list,
 					text_pos,
-					color_vec4_to_u32({0.9, 0.3, 0.3, 1}),
+					color_vec4_to_u32(im.Vec4{1.0, 0.6, 0.2, 1.0}), // Warm orange
 					texts[i],
 				)
 			} else {
@@ -193,7 +181,7 @@ DrawMusicInformationBar :: proc(
 	return is_clicked
 }
 
-CustomButton :: proc(
+draw_custom_button :: proc(
 	label: cstring,
 	flags: im.SelectableFlags,
 	size: im.Vec2,
@@ -222,11 +210,10 @@ CustomButton :: proc(
 	max := pos + full_size
 
 	color: u32
-
 	if is_hovered {
-		color = color_vec4_to_u32({0.6, 0.1, 0.4, 0.25})
+		color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.12}) // Softer cyan-blue
 	} else {
-		color = color_vec4_to_u32({0.5, 0.0, 0.3, 0.15})
+		color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.25}) // Cyan-blue w/ low alpha
 	}
 
 
@@ -242,40 +229,48 @@ CustomButton :: proc(
 }
 
 
-CustomSearchBar :: proc(id: string, buffer: ^[256]u8, size: im.Vec2) -> bool {
+draw_search_bar :: proc(id: string, buffer: ^[256]u8, size: im.Vec2) -> bool {
 	rounding: f32 = 6.0
 	padding := im.Vec2{10, 6}
-	bg_color := color_vec4_to_u32({0.2, 0.0, 0.2, 0.25}) // background
-	border_color := color_vec4_to_u32({1.0, 0.4, 1.0, 0.35})
-	text_color := color_vec4_to_u32({1.0, 1.0, 1.0, 1.0})
 
-	pos := im.GetCursorScreenPos()
+	bg_color := color_vec4_to_u32({0.10, 0.12, 0.20, 0.75}) // deep bluish background
+	border_color := color_vec4_to_u32({0.35, 0.60, 1.00, 0.45}) // light electric blue border
+	text_color := color_vec4_to_u32({0.90, 0.95, 1.00, 1.00}) // soft white/blue-tinted text
+
 	draw_list := im.GetWindowDrawList()
+	pos := im.GetCursorScreenPos()
 
-	// Draw background
+	// Outer bounds
 	min := pos
 	max := pos + size
 	im.DrawList_AddRectFilled(draw_list, min, max, bg_color, rounding)
 	im.DrawList_AddRect(draw_list, min, max, border_color, rounding)
 
-	// Set up invisible input
-	im.SetCursorScreenPos(pos + padding)
+	// Inner input
+	input_pos := pos + padding
+	input_size := size - padding * 2
+	im.SetCursorScreenPos(input_pos)
+
+	// Style setup
 	im.PushStyleVar(im.StyleVar.FrameBorderSize, 0)
 	im.PushStyleVar(im.StyleVar.FrameRounding, rounding)
-	im.PushStyleColor(.FrameBg, color_vec4_to_u32({0, 0, 0, 0})) // fully transparent
+	im.PushStyleColor(.FrameBg, color_vec4_to_u32({0, 0, 0, 0})) // transparent bg
 	im.PushStyleColor(.Border, 0)
 	im.PushStyleColor(.Text, text_color)
-	cstring_buffer := cast(cstring)(&buffer[0])
+
+	// Input flags
 	flags: im.InputTextFlags
 	flags += {
 		im.InputTextFlags.EnterReturnsTrue,
 		im.InputTextFlags.AutoSelectAll,
 		im.InputTextFlags.NoHorizontalScroll,
 	}
-	// flags.set(.AutoSelectAll)
-	// flags.set(.NoHorizontalScroll)
+
+	// Actual input field
+	cstring_buffer := cast(cstring)(&buffer[0])
 	edited := im.InputTextWithHint(text(id), "Search...", cstring_buffer, 100, flags)
 
+	// Cleanup
 	im.PopStyleColor(3)
 	im.PopStyleVar(2)
 
@@ -293,45 +288,67 @@ clamp :: proc(value, min_value, max_value: f32) -> f32 {
 	return value
 }
 
-draw_custom_header :: proc(title: cstring) {
-	header_height: f32 = 50.0
-	header_color := color_vec4_to_u32({0.1, 0.1, 0.1, 1.0}) // purple-ish
-	// color = color_vec4_to_u32({0.6, 0.1, 0.4, 0.25})
-	// color_vec4_to_u32({0.8, 0.2, 0.6, 0.35})
+draw_custom_header :: proc(title: cstring, width: f32) {
+	header_height: f32 = 60.0
+	rounding: f32 = 8.0
 
-	text_color := color_vec4_to_u32({1, 1, 1, 1})
+	bg_color := color_vec4_to_u32({0.05, 0.08, 0.12, 1.0}) // deep background
+	text_color := color_vec4_to_u32({0.90, 0.95, 1.00, 1.00}) // soft bluish-white
+	btn_bg := color_vec4_to_u32({0.20, 0.25, 0.35, 0.8}) // button normal
+	btn_hover := color_vec4_to_u32({0.30, 0.45, 0.65, 0.9}) // button hover
+	btn_active := color_vec4_to_u32({0.40, 0.65, 1.00, 1.0}) // button active
+	icon_color := color_vec4_to_u32({1, 1, 1, 0.9})
 
 	draw_list := im.GetWindowDrawList()
-	p0 := im.GetWindowPos()
-	p1 := im.Vec2{p0.x + im.GetWindowWidth(), p0.y + header_height}
+	p0 := im.GetCursorScreenPos()
+	p1 := im.Vec2{p0.x + width, p0.y + header_height}
 
-	// Reserve vertical space
-	im.SetCursorScreenPos(p0)
-	im.Dummy(im.Vec2{0, header_height})
+	// Draw header background
+	im.DrawList_AddRectFilled(draw_list, p0, p1, bg_color, rounding)
 
-	// Draw background
-	im.DrawList_AddRectFilled(draw_list, p0, p1, header_color, 5)
-
-	// Push bold font (must have been loaded earlier)
-	// bold_font :=  
-	// font_atlas : ^im.FontAtlas = im.GetIO().Fonts
-	// fonts := (font_atlas^).Fonts
-
-	// Replace index if different
-	// im.PushFont(bold_font)
-
-
-	// Center the text vertically
+	// Draw header text (left aligned)
 	text_size := im.CalcTextSize(title)
-	text_pos := im.Vec2 {
-		p0.x + 10.0, // horizontal padding
-		p0.y + (header_height - text_size.y) / 2.0,
-	}
+	text_pos := im.Vec2{p0.x + 20.0, p0.y + (header_height - text_size.y) / 2.0}
 	im.DrawList_AddText(draw_list, text_pos, text_color, title)
+
+	// Toggle Button (right side of header)
+	btn_size := im.Vec2{30, 30}
+	btn_pos := im.Vec2 {
+		p1.x - btn_size.x - 20.0, // 20px right margin
+		p0.y + (header_height - btn_size.y) / 2.0,
+	}
+
+	im.SetCursorScreenPos(btn_pos)
+	im.InvisibleButton("##header_toggle_btn", btn_size)
+
+	is_hovered := im.IsItemHovered()
+	is_active := im.IsItemActive()
+	btn_col: u32
+	if is_active {
+		btn_col = btn_active
+	} else if is_hovered {
+		btn_col = btn_hover
+	} else {
+		btn_col = btn_bg
+	}
+	im.DrawList_AddRectFilled(draw_list, btn_pos, btn_pos + btn_size, btn_col, 6.0)
+
+	// Icon or indicator inside button (simple chevron or circle)
+	center := btn_pos + btn_size / 2
+	radius: f32 = 6.0
+	if app.g_app.show_visualizer {
+		im.DrawList_AddCircleFilled(draw_list, center, radius, icon_color)
+	} else {
+		im.DrawList_AddCircle(draw_list, center, radius, icon_color, 16, 1.5)
+	}
+
+	if im.IsItemClicked() {
+		app.g_app.show_visualizer = !app.g_app.show_visualizer
+	}
 }
 
-
-audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
+// TODO: BUG: Clicking any where will udpdate the values
+draw_audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	left_margin: f32 = 40.0
 	right_margin: f32 = 40.0
 	spacing := im.GetStyle().ItemSpacing.x
@@ -366,10 +383,10 @@ audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	handle_x := p0.x + progress_width * value
 	handle_radius: f32 = active || hovered ? 7.0 : 5.0
 
-	col_bg := color_vec4_to_u32({0.2, 0.0, 0.2, 0.25})
-	col_fg := color_vec4_to_u32({0.6, 0.1, 0.6, 0.35})
-	col_handle := color_vec4_to_u32({0.9, 0.3, 0.9, 0.55})
-	col_border := color_vec4_to_u32({1.0, 0.4, 1.0, 0.35})
+	col_bg := color_vec4_to_u32({0.1, 0.2, 0.25, 0.2}) // background
+	col_fg := color_vec4_to_u32({0.2, 0.8, 1.0, 0.35}) // progress bar fill
+	col_handle := color_vec4_to_u32({0.2, 0.9, 1.0, 0.75}) // draggable circle
+	col_border := color_vec4_to_u32({0.3, 0.9, 1.0, 0.4}) // outer border line
 	rounding: f32 = 2.0
 
 	im.DrawList_AddRectFilled(draw_list, p0, p1, col_bg, rounding)
@@ -390,10 +407,11 @@ audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	)
 	text_size := im.CalcTextSize(label)
 	text_pos := im.Vec2{(p0.x + p1.x - text_size.x) / 2, p1.y + 4}
-	im.DrawList_AddText(draw_list, text_pos, col_handle, label)
+	im.DrawList_AddText(draw_list, text_pos, color_vec4_to_u32({0.9, 0.95, 1.0, 1.0}), label)
 
-	if im.IsItemDeactivatedAfterEdit() || im.IsMouseReleased(.Left) {
+	if im.IsItemDeactivatedAfterEdit() && im.IsItemHovered() && im.IsItemActive() {
 		audio.seek_to_position(audio_state, audio_state.current_time)
+		fmt.println("hello world")
 	}
 	im.PopID()
 
@@ -431,6 +449,8 @@ audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 
 	if im.IsItemDeactivatedAfterEdit() || im.IsMouseReleased(.Left) {
 		audio.set_volume(audio_state, audio_state.volume)
+		fmt.println("update volume hello world")
+
 	}
 
 	im.PopID()

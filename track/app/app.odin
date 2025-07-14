@@ -36,6 +36,7 @@ AppState :: struct {
 	taglib_file_count:          int,
 	all_files_scanned_donr:     bool,
 	show_search_results:     bool,
+	show_visualizer: bool, 
 }
 
 g_app: ^AppState

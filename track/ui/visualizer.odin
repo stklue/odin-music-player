@@ -286,36 +286,32 @@ draw_wave :: proc(
 }
 
 
-render_audio_visualizer :: proc(audio_state: ^audio.AudioState) {
+render_audio_visualizer :: proc(audio_state: ^audio.AudioState, pos: im.Vec2, size: im.Vec2) {
 	now := time.now()
 	dt := f32(time.duration_seconds(time.since(g_vis.last_time)))
 	g_vis.last_time = now
 	dt = math.min(dt, 0.033)
 
-	im.SetNextWindowSize({900, 600}, {})
-	if im.Begin("Wave Visualizer", nil, {.NoCollapse, .NoTitleBar, .NoMove, .NoResize}) {
-		draw_list := im.GetWindowDrawList()
-		canvas_pos := im.GetCursorScreenPos()
-		canvas_size := im.GetContentRegionAvail()
+	draw_list := im.GetWindowDrawList()
 
-		update_visualizer(audio_state, dt, canvas_size)
+	update_visualizer(audio_state, dt, size)
 
-		// Background
-		bg := im.Vec4{0.05, 0.05, 0.1, 1.0}
-		im.DrawList_AddRectFilled(
-			draw_list,
-			canvas_pos,
-			im.Vec2{canvas_pos.x + canvas_size.x, canvas_pos.y + canvas_size.y},
-			im.ColorConvertFloat4ToU32(bg),
-		)
+	// Background
+	bg := im.Vec4{0.05, 0.05, 0.1, 1.0}
+	im.DrawList_AddRectFilled(
+		draw_list,
+		pos,
+		pos + size,
+		im.ColorConvertFloat4ToU32(bg),
+	)
 
-		draw_wave(draw_list, audio_state, canvas_pos, canvas_size)
-		draw_particles(draw_list)
+	draw_wave(draw_list, audio_state, pos, size)
+	draw_particles(draw_list)
 
-		im.InvisibleButton("canvas", canvas_size)
-		im.End()
-	}
+	im.SetCursorScreenPos(pos)
+	im.InvisibleButton("canvas", size)
 }
+
 
 draw_particles :: proc(draw_list: ^im.DrawList) {
 	for p in g_vis.particles {

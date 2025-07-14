@@ -112,13 +112,10 @@ play_audio :: proc(state: ^AudioState) {
 
 	// Convert UTF-8 path to wide string
 	// Fixed windows path problems; TODO: Should change the full_path to this
-	// cleaned_str := fmt.tprint(state.path)[4:]
-	// fmt.println("Cleaned string: ", cleaned_str, "Other: ", state.path)
 	wide_path := windows.utf8_to_wstring(strings.clone_from_cstring(state.path))
 	fmt.println("The wide path: ", wide_path)
 	// defer free(wide_path)
 
-	// err := ma.decoder_init_file(state.path, nil, decoder)
 	err := ma.decoder_init_file_w(wide_path, nil, decoder)
 	if err != .SUCCESS {
 		fmt.printf("[AUDIO_STATE_PLAY_AUDIO] Failed to load file: %v\n", err)
@@ -271,7 +268,7 @@ play_audio :: proc(state: ^AudioState) {
 toggle_playback :: proc(state: ^AudioState) {
 	sync.mutex_lock(&state.mutex)
 	defer sync.mutex_unlock(&state.mutex)
-
+	fmt.println("[AUDIO_STATE_TOGGLE_PLAYBACK]")
 	if state.device != nil {
 		if state.is_playing {
 			ma.device_stop(state.device)
@@ -289,7 +286,7 @@ toggle_playback :: proc(state: ^AudioState) {
 stop_playback :: proc(state: ^AudioState) {
 	sync.mutex_lock(&state.mutex)
 	defer sync.mutex_unlock(&state.mutex)
-
+	fmt.println("[AUDIO_STATE_STOP_PLAYBACK]")
 	if state.device != nil {
 		ma.device_stop(state.device)
 		state.is_playing = false
@@ -303,11 +300,12 @@ stop_playback :: proc(state: ^AudioState) {
 seek_to_position :: proc(state: ^AudioState, position: f32) {
 	sync.mutex_lock(&state.mutex)
 	defer sync.mutex_unlock(&state.mutex)
-
+	fmt.println("[AUDIO_STATE_SEEK_POSITION]", position, state.should_seek)
 	if state.device != nil {
 		state.seek_target = position
 		state.should_seek = true
 	}
+	// fmt.println("[AUDIO_STATE_SEEK_POSITION] AFTER: ", state.device, position, state.should_seek)
 }
 
 set_volume :: proc(state: ^AudioState, volume: f32) {
