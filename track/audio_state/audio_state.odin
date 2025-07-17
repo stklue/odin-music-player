@@ -100,6 +100,8 @@ play_audio :: proc(state: ^AudioState) {
 	}
 
 	// Initialize new decoder
+	// state.path = "C:\\Users\\St.Klue\\Music\\2022\\CHVRCHES - Gun.mp3"
+	// state.path = "\C:\Users\St.Klue\Music\2022\Band of Horses - The Funeral.mp3"
 	fmt.printf("[AUDIO_STATE_PLAY_AUDIO] Loading audio file: %s\n", state.path)
 	decoder := new(ma.decoder)
 	ma.decoder_seek_to_pcm_frame(decoder, 0)
@@ -112,18 +114,40 @@ play_audio :: proc(state: ^AudioState) {
 
 	// Convert UTF-8 path to wide string
 	// Fixed windows path problems; TODO: Should change the full_path to this
-	wide_path := windows.utf8_to_wstring(strings.clone_from_cstring(state.path))
+	str_path := strings.clone_from_cstring(state.path)
+	wide_path := windows.utf8_to_wstring(str_path)
 	fmt.println("The wide path: ", wide_path)
 	// defer free(wide_path)
-
-	err := ma.decoder_init_file_w(wide_path, nil, decoder)
-	if err != .SUCCESS {
-		fmt.printf("[AUDIO_STATE_PLAY_AUDIO] Failed to load file: %v\n", err)
-		free(decoder)
-		// TODO: Should implement message system: display to user this path is invalid
-		// then request to rescan 
+	data, ok := os.read_entire_file_from_filename(str_path) // []byte
+	if !ok {
+		fmt.eprintf("Could not open %s\n", "file")
 		return
 	}
+	defer delete(data, context.temp_allocator)
+	// err := ma.decoder_init_file_w(wide_path, nil, decoder)
+	err := ma.decoder_init_memory(raw_data(data), len(data), nil, decoder)
+
+	if err == .ERROR {
+		fmt.printf("[AUDIO_STATE_PLAY_AUDIO] Failed to load file: %v\n", err)
+		fmt.println("[AUDIO_STATE_PLAY_AUDIO] TRIED DIFFERENT DECODER")
+		// try different decoder
+		new_err := ma.decoder_init_file(state.path, nil, decoder)
+		if new_err != .SUCCESS {
+			fmt.printf("[AUDIO_STATE_PLAY_AUDIO] Failed to load file: %v\n", err)
+			state.thread_done = true
+			// free(decoder)
+			// TODO: Should implement message system: display to user this path is invalid
+			// then request to rescan 
+			return
+		}
+	}
+	// if err != .SUCCESS {
+	// 	fmt.printf("[AUDIO_STATE_PLAY_AUDIO] Failed to load file: %v\n", err)
+	// 	free(decoder)
+	// 	// TODO: Should implement message system: display to user this path is invalid
+	// 	// then request to rescan 
+	// 	return
+	// }
 
 	// Seek decoder to beginning before playback starts
 	fmt.println("[AUDIO_STATE_PLAY_AUDIO] Seeking decoder to the beginning...")
