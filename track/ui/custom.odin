@@ -279,8 +279,6 @@ draw_search_bar :: proc(id: string, buffer: ^[256]u8, size: im.Vec2) -> bool {
 
 
 draw_playlist_items :: proc(audio_state: ^audio.AudioState, size: [2]f32) {
-	// im.Text("hello world")
-	// fmt.println(len(app.g_app.clicked_playlist.entries))
 	for v, i in app.g_app.clicked_playlist_entries {
 		is_selected := app.g_app.current_item_playing_index == i
 		im.BeginGroup()
@@ -289,7 +287,7 @@ draw_playlist_items :: proc(audio_state: ^audio.AudioState, size: [2]f32) {
 		if draw_information_bar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
 			fmt.printf("[TRACK::App] Playing: %s\n", v.name)
 			fmt.println(i, app.g_app.current_item_playing_index, is_selected)
-			app.g_app.all_songs_item_playling = v
+			app.g_app.current_song_playing = v
 			app.g_app.playlist_item_clicked = true
 			app.g_app.current_item_playing_index = i
 			audio.update_path(audio_state, v.fullpath)
