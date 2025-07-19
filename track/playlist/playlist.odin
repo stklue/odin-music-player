@@ -5,21 +5,11 @@ import common "../common"
 import "base:runtime"
 import "core:encoding/xml"
 import "core:fmt"
+import "core:time"
 import "core:os"
 import "core:path/filepath"
 import "core:strings"
 import "core:sync"
-
-
-// Playlist_Entry :: struct {
-// 	src:         string,
-// 	albumTitle:  string,
-// 	albumArtist: string,
-// 	trackTitle:  string,
-// 	trackArtist: string,
-// 	duration:    string,
-// }
-
 
 Playlist_Metadata :: struct {
 	total_duration: string,
@@ -207,7 +197,9 @@ load_zpl_playlist :: proc(path: string) -> (playlist: Playlist, ok: bool) {
 }
 
 
-load_all_zpl_playlists :: proc(mutex: ^sync.Mutex, plists: ^[dynamic]Playlist) {
+load_all_zpl_playlists :: proc(mutex: ^sync.Mutex, playlists: ^[dynamic]Playlist) {
+	stop_watch: time.Stopwatch
+	time.stopwatch_start(&stop_watch)
 	folder_path := "C:/Users/St.Klue/Music/Playlists"
 	dir_handle, err := os.open(folder_path)
 	if err != os.ERROR_NONE {
@@ -215,22 +207,22 @@ load_all_zpl_playlists :: proc(mutex: ^sync.Mutex, plists: ^[dynamic]Playlist) {
 	}
 	defer os.close(dir_handle)
 	// Get all files in the directory
-	files, read_err := os.read_dir(dir_handle, 1024)
+	files, read_err := os.read_dir(dir_handle, -1)
 	if read_err != nil {
 		fmt.println("Failed to read directory:", folder_path)
 	}
-	sync.mutex_lock(mutex)
 	for file in files {
 		if !file.is_dir && strings.has_suffix(file.name, ".zpl") {
 			// full_path := path.join(folder_path, file.name)
 			playlist, ok := load_zpl_playlist(file.fullpath)
 			if ok {
-				append(plists, playlist)
+				sync.mutex_lock(mutex)
+				append(playlists, playlist)
+				sync.mutex_unlock(mutex)
 			}
 		}
 	}
-	fmt.printf("Playlists %d found\n", len(plists))
-	// fmt.println(plists[:2])
-	sync.mutex_unlock(mutex)
-	fmt.printf("%d files scanned\n", len(files))
+	time.stopwatch_stop(&stop_watch)
+	fmt.printfln("Playlists (.zpl) %d/%d scanned in %v", len(playlists), len(files), stop_watch._accumulation)
 }
+

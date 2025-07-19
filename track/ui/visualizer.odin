@@ -5,7 +5,6 @@ import audio "../audio_state"
 import "core:math"
 import "core:math/rand"
 import "core:time"
-import gl "vendor:OpenGL"
 
 // Visualizer Config
 NUM_SAMPLES: int : 1024

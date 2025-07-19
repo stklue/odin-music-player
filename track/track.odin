@@ -29,7 +29,7 @@ import ui "ui"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
 import ma "vendor:miniaudio"
-
+import vis "visualizer"
 
 main :: proc() {
 	// ============== OPENGL AND GLFW INIT ===============================
@@ -60,6 +60,11 @@ main :: proc() {
 	defer im.DestroyContext()
 	io := im.GetIO()
 
+	imgui_impl_glfw.InitForOpenGL(window, true)
+	defer imgui_impl_glfw.Shutdown()
+	imgui_impl_opengl3.Init("#version 150")
+	defer imgui_impl_opengl3.Shutdown()
+
 	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad}
 	base_font := im.FontAtlas_AddFontFromFileTTF(
 		io.Fonts,
@@ -75,55 +80,61 @@ main :: proc() {
 	// init app state
 	app.g_app = app.init_app()
 	root := "C:/Users/St.Klue/Music"
-	stop_watch: time.Stopwatch
-	time.stopwatch_start(&stop_watch)
-	// thread.create_and_start_with_poly_data(root, app.search_all_files)
-	// app.search_all_files_archive(root)
-	app.scan_all_files(root)
-
-	// (root)
-	// app.search_all_files_threaded(&app.g_app.all_songs, root, 4)
-	time.stopwatch_stop(&stop_watch)
-	// fmt.println(app.g_app.all_songs)
-	fmt.printfln(
-		"Found %d/%d files in %v",
-		len(app.g_app.all_songs),
-		app.g_app.total_files,
-		stop_watch._accumulation,
+	
+	all_songs := new([dynamic]common.FileEntry)
+	all_songs_mutex: sync.Mutex
+	all_files_scan_done: bool
+	scan_all_songs_thread := thread.create_and_start_with_poly_data3(
+		&all_songs_mutex,
+		all_songs,
+		&all_files_scan_done,
+		common.scan_all_files,
 	)
 
+
+	all_playlists := new([dynamic]common.Playlist)
+	all_playlists_mutex: sync.Mutex
+	all_playlists_scan_done: bool
+	scan_playlists_thread := thread.create_and_start_with_poly_data3(
+		&all_playlists_mutex,
+		all_playlists,
+		&all_playlists_scan_done,
+		common.scan_all_playlists,
+	)
+	// ==================== loading playlists ====================
+	// thread.create_and_start_with_poly_data2(
+	// 	&app.g_app.mutex,
+	// 	&app.g_app.playlists,
+	// 	pl.load_all_zpl_playlists,
+	// )
+
+
+	// thread.destroy(scan_all_songs_thread)
+
+	// Use the sear_all_files with write metadata using taglib because it's slow
+	// app.search_all_files_threaded(&app.g_app.all_songs, root, 4)
+
+	// Use this to write the metadata to a txt file because taglib is slow
 	// app.write_metadata_to_txt(app.g_app.all_songs)
 
+	// if app.g_app.taglib_file_count > 0 {
+	// 	avg :=
+	// 		time.duration_milliseconds(app.g_app.taglib_total_duration) /
+	// 		f64(app.g_app.taglib_file_count)
+	// 	total := app.g_app.taglib_total_duration
+	// 	fmt.printfln("TagLib processed %d files", app.g_app.taglib_file_count)
+	// 	fmt.printfln("Total TagLib time: %.3f", total)
+	// 	fmt.printfln("Average per file: %.3fms", avg)
+	// } else {
+	// 	fmt.println("No .mp3 files processed with TagLib.")
+	// }
 
-	if app.g_app.taglib_file_count > 0 {
-		avg :=
-			time.duration_milliseconds(app.g_app.taglib_total_duration) /
-			f64(app.g_app.taglib_file_count)
-		total := app.g_app.taglib_total_duration
-		fmt.printfln("TagLib processed %d files", app.g_app.taglib_file_count)
-		fmt.printfln("Total TagLib time: %.3f", total)
-		fmt.printfln("Average per file: %.3fms", avg)
-	} else {
-		fmt.println("No .mp3 files processed with TagLib.")
-	}
-
-	//  init audio stuff
-	// global audio state
+	//  initialize audio state and miniaudio engine
 	audio_state := audio.init_audio_state()
-
 	defer audio.destroy_audio_state(audio_state)
-
 	ma.engine_init(nil, &audio_state.engine)
 	defer ma.engine_uninit(&audio_state.engine)
 
-	when !DISABLE_DOCKING {
-		io.ConfigFlags += {.DockingEnable}
-		io.ConfigFlags += {.ViewportsEnable}
-
-		style := im.GetStyle()
-		style.WindowRounding = 0
-		style.Colors[im.Col.WindowBg].w = 1
-	}
 
 	style := im.GetStyle()
 	style.Colors[im.Col.ScrollbarBg] = im.Vec4{0.10, 0.12, 0.18, 0.25}
@@ -131,39 +142,17 @@ main :: proc() {
 	style.Colors[im.Col.ScrollbarGrabHovered] = im.Vec4{0.30, 0.60, 1.00, 0.45}
 	style.Colors[im.Col.ScrollbarGrabActive] = im.Vec4{0.45, 0.80, 1.00, 0.60}
 
-	ui.set_red_black_theme()
-	imgui_impl_glfw.InitForOpenGL(window, true)
-	defer imgui_impl_glfw.Shutdown()
-	imgui_impl_opengl3.Init("#version 150")
-	defer imgui_impl_opengl3.Shutdown()
 
 	// globals
-	// shared_files: [dynamic]common.FileEntry
-	// shared_files_mutex: sync.Mutex
-
-	search_results: [dynamic]common.FileEntry
-	search_results2: [dynamic]common.SearchItem
+	search_results: [dynamic]common.SearchItem
 	search_mutex: sync.Mutex
-
-	// loading music files into memory
-	// file_thread := thread.create_and_start_with_poly_data2(
-	// 	&shared_files_mutex,
-	// 	&shared_files,
-	// 	app.load_files_thread_proc,
-	// )
-
-	// loading playlists
-	playlists_thread := thread.create_and_start_with_poly_data2(
-		&app.g_app.mutex,
-		&app.g_app.playlists,
-		pl.load_all_zpl_playlists,
-	)
 
 
 	//  gui state
-	my_buffer: [256]u8
+	song_query_buffer: [256]u8 // search buffer 
 	// Initialize once at startup
 	ui.init_visualizer()
+	vis.init_visualizer()
 
 	for !glfw.WindowShouldClose(window) {
 		glfw.PollEvents()
@@ -172,7 +161,7 @@ main :: proc() {
 		imgui_impl_glfw.NewFrame()
 		im.NewFrame()
 
-
+		// ==================== Layout dimensions ====================
 		viewport := im.GetMainViewport()
 		screen_w := io.DisplaySize.x
 		screen_h := io.DisplaySize.y
@@ -187,7 +176,7 @@ main :: proc() {
 		// Update audio state
 		audio.update_audio(audio_state)
 
-		// ========= UI KEY PRESSES ===========
+		// ==================== UI Key input ====================
 		if io.KeysDown[im.Key.Space] && im.IsKeyPressed(.Space) {
 			// Check if any text input is currently active
 			if !im.IsAnyItemActive() {
@@ -223,7 +212,7 @@ main :: proc() {
 			}
 		}
 
-		// Top Left
+		// ==================== Top Left ====================
 		im.SetNextWindowPos(im.Vec2{0, 0})
 		im.SetNextWindowSize(im.Vec2{third_w, top_h})
 
@@ -232,32 +221,95 @@ main :: proc() {
 		im.PushStyleColor(
 			im.Col.ScrollbarGrabHovered,
 			ui.color_vec4_to_u32({0.30, 0.60, 1.00, 0.45}),
-		) // brighter on hover
+		)
 		im.PushStyleColor(
 			im.Col.ScrollbarGrabActive,
 			ui.color_vec4_to_u32({0.45, 0.80, 1.00, 0.60}),
-		) // vivid on drag
+		)
 
+		// sync.mutex_lock(&all_songs_mutex)
+		// if (all_files_scan_done) {
+		// 	fmt.println("Main thread. Scanning is done.")
+		// 	fmt.println("Here is the data: ", len(all_songs))
+		// } else {
+		// 	fmt.println("nothing")
+		// }
+		// sync.mutex_unlock(&all_songs_mutex)
 
 		style := im.GetStyle()
 		style.ChildRounding = 10
 		// style.WindowRounding = 40
-		ui.top_left_panel(
-			app.g_app,
-			&search_results2,
-			&search_mutex,
-			root,
-			audio_state,
-			&my_buffer,
-		)
-
+		left_panel_window_size := im.Vec2{third_w, top_h}
+		if all_playlists_scan_done {
+			ui.top_left_panel(
+				all_playlists,
+				&all_playlists_mutex,
+				all_playlists_scan_done,
+				app.g_app,
+				&search_results,
+				&search_mutex,
+				root,
+				audio_state,
+				&song_query_buffer,
+				left_panel_window_size,
+			)
+		}
+		// else {
+		// 	// im.SetNextWindowSize(left_panel_window_size)
+		// 	style := im.GetStyle()
+		// 	style.FramePadding = 16
+		// 	if im.Begin(
+		// 		"##right-panel-header",
+		// 		nil,
+		// 		{.NoResize, .NoCollapse, .NoTitleBar, .NoBackground},
+		// 	) {
+		// 		im.Text("Loading Playlists...")
+		// 	}
+		// 	im.End()
+		// }
+		// im.SetNextWindowPos(im.Vec2{0, 0})
+		// im.SetNextWindowSize(im.Vec2{third_w, top_h})
+		// if im.Begin("Visualizer", nil, im.WindowFlags_NoDecoration) {
+		// 	vis.render_audio_visualizer(
+		// 		audio_state,
+		// 		im.GetWindowPos() + im.GetWindowContentRegionMin(),
+		// 		im.GetContentRegionAvail(),
+		// 	)
+		// }
+		// im.End()
 		im.PopStyleColor(4)
 
-		// Top Right 
+		// ==================== Top Right ==================== 
 		display_songs :=
-			app.g_app.current_view_index == 0 ? app.g_app.all_songs : app.g_app.clicked_playlist
-		ui.top_right_panel(app.g_app, bold_header_font, audio_state, top_h, third_w, right_w)
-		// Bottom
+			!app.g_app.show_clicked_playlist ? app.g_app.all_songs : app.g_app.clicked_playlist.entries
+		right_panel_window_position := im.Vec2{third_w, 0}
+		right_panel_window_size := im.Vec2{right_w, top_h}
+		if all_files_scan_done {
+			ui.top_right_panel(
+				all_songs,
+				app.g_app,
+				bold_header_font,
+				audio_state,
+				right_panel_window_position,
+				right_panel_window_size,
+			)
+		}
+		// else {
+		// 	im.SetNextWindowPos(right_panel_window_position)
+		// 	// im.SetNextWindowSize(right_panel_window_size)
+		// 	style := im.GetStyle()
+		// 	style.FramePadding = 16
+
+		// 	if im.Begin(
+		// 		"##right-panel-header",
+		// 		nil,
+		// 		{.NoResize, .NoCollapse, .NoTitleBar, .NoBackground},
+		// 	) {
+		// 		im.Text("Loading...")
+		// 	}
+		// 	im.End()
+		// }
+		// ==================== Bottom ====================
 		different_playlist_songs :=
 			app.g_app.playlist_item_clicked ? display_songs : app.g_app.all_songs
 		ui.bottom_panel(
@@ -268,9 +320,6 @@ main :: proc() {
 			screen_w,
 			third_h,
 		)
-
-		// ui.render_audio_visualizer(audio_state)
-
 
 		im.Render()
 		display_w, display_h := glfw.GetFramebufferSize(window)
@@ -289,6 +338,7 @@ main :: proc() {
 		glfw.SwapBuffers(window)
 		free_all(context.temp_allocator)
 	}
+
 
 	// Cleanup audio on exit
 	sync.mutex_lock(&audio_state.mutex)

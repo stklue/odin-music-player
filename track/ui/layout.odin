@@ -38,20 +38,24 @@ color_vec4_to_u32 :: proc(c: Vec4) -> u32 {
 
 
 top_left_panel :: proc(
+	playlists: ^[dynamic]common.Playlist,
+	playlists_mutex: ^sync.Mutex,
+	all_playlists_scan_done: bool,
 	app_state: ^app.AppState,
-	search_results2: ^[dynamic]common.SearchItem,
+	search_results: ^[dynamic]common.SearchItem,
 	search_mutex: ^sync.Mutex,
 	root: string,
 	audio_state: ^audio.AudioState,
 	query_buffer: ^[256]u8,
+	window_size: im.Vec2,
 ) {
 	if im.Begin("##top-left", nil, {.NoTitleBar, .NoResize, .NoBackground, .NoScrollbar}) {
 		offset_x: f32 = 35
 		size := im.GetContentRegionAvail()
 
 		// === Search Bar ===
-		im.Dummy({0, 20}) // Add vertical margin before
-		im.Dummy({10, 0}) // Add vertical margin before
+		im.Dummy({0, 20}) 
+		im.Dummy({10, 0}) 
 		im.SameLine()
 		bar_size := im.Vec2{size.x - offset_x, 40} // includes padding space
 		draw_search_bar("##search-bar", query_buffer, bar_size)
@@ -60,7 +64,7 @@ top_left_panel :: proc(
 				app.g_app,
 				strings.clone_from_cstring(cast(cstring)(&query_buffer[0])),
 				&app.g_app.all_songs,
-				search_results2,
+				search_results,
 				search_mutex,
 				app.search_song_2,
 			)
@@ -85,23 +89,29 @@ top_left_panel :: proc(
 					app.g_app.playlist_index = -1
 					app.g_app.current_view_index = 0
 					app.g_app.playlist_item_clicked = false
-
-					clear(&app.g_app.all_songs)
+					// sync.mutex_lock(&app.g_app.mutex)
+					// clear(&app.g_app.all_songs)
+					// sync.mutex_unlock(&app.g_app.mutex)
 					thread.create_and_start_with_poly_data(root, app.scan_all_files)
 				}
 			}
 
 			im.Separator()
 
-			sync.mutex_lock(&app.g_app.mutex)
+			// TODO: fix this not setting to true when press ctrl and backspace
 			empty := true
+			diff: u8
 			for val in query_buffer {
 				if val != 0 {
+					diff = val
 					empty = false
 				}
 			}
+
+			// draw playlists
 			if empty {
-				for v, i in app.g_app.playlists {
+				// for v, i in app.g_app.playlists {
+				for v, i in playlists {
 					currently_selected := app.g_app.playlist_index == i
 					if draw_item_selectable(
 						fmt.ctprint(v.meta.title),
@@ -111,20 +121,21 @@ top_left_panel :: proc(
 						{10, 10},
 					) {
 						app.g_app.playlist_index = i
-						app.g_app.current_view_index = 1
-
+						app.g_app.clicked_playlist = &playlists[i]
+						app.g_app.show_clicked_playlist = true
+					
 						thread.create_and_start_with_poly_data4(
 							&app.g_app.mutex,
-							&app.g_app.clicked_playlist,
-							i,
-							&app.g_app.playlists,
-							app.load_files_from_pl_thread,
+							app.g_app.clicked_playlist,
+							app.g_app.clicked_playlist_entries,
+							app.g_app.scan_playlist_done,
+							common.scan_playlist_entries,
 						)
 					}
 				}
 			} else {
-				if len(search_results2) > 0 && len(search_results2) < 100 {
-					for search_result, i in search_results2 {
+				if len(search_results) > 0 && len(search_results) < 100 {
+					for search_result, i in search_results {
 						currently_selected := app.g_app.search_result_index == i
 						switch search_result.kind {
 						case .Album, .Artist, .Title:
@@ -147,23 +158,24 @@ top_left_panel :: proc(
 					}
 				}
 			}
-			sync.mutex_unlock(&app.g_app.mutex)
-
-			im.EndChild()
+			// sync.mutex_unlock(&app.g_app.mutex)
 		}
+		im.EndChild()
 		// im.PopStyleColor()
 	}
 	im.End()
 
 }
 top_right_panel :: proc(
+	all_songs: ^[dynamic]common.FileEntry,
 	app_state: ^app.AppState,
 	bolt_font: ^im.Font,
 	audio_state: ^audio.AudioState,
-	top_h, third_w, right_w: f32,
+	window_position: im.Vec2,
+	window_size: im.Vec2,
 ) {
-	im.SetNextWindowPos(im.Vec2{third_w, 0})
-	im.SetNextWindowSize(im.Vec2{right_w, top_h})
+	im.SetNextWindowPos(window_position)
+	im.SetNextWindowSize(window_size)
 	style := im.GetStyle()
 	old_padding := style.FramePadding
 	defer style.FramePadding = old_padding // Restore after the frame
@@ -176,7 +188,7 @@ top_right_panel :: proc(
 		{.NoResize, .NoCollapse, .NoTitleBar, .NoBackground},
 	) {
 		title :=
-			app_state.playlist_index == -1 ? "All Songs" : text(app_state.playlists[app_state.playlist_index].meta.title)
+			app_state.playlist_index == -1 ? "All Songs" : text(app_state.clicked_playlist.meta.title)
 
 		im.SetCursorPos(im.Vec2{0, 20})
 		im.PushFont(bolt_font)
@@ -185,15 +197,17 @@ top_right_panel :: proc(
 		im.Dummy(im.Vec2{0, 20})
 
 
-		sync.mutex_lock(&app_state.mutex)
+		// sync.mutex_lock(&app_state.mutex)
 		size := im.GetContentRegionAvail()
 		im.BeginChild("##list-region", size) // border=true
 
 		if app.g_app.show_visualizer {
 			pos := im.GetCursorScreenPos()
 			render_audio_visualizer(audio_state, pos, size)
+		} else if app.g_app.show_clicked_playlist {
+			draw_playlist_items(audio_state, size)
 		} else {
-			for v, i in app_state.all_songs {
+			for v, i in all_songs {
 				is_selected := app_state.current_item_playing_index == i
 				im.BeginGroup()
 				im.Spacing()
@@ -202,6 +216,7 @@ top_right_panel :: proc(
 					fmt.printf("[TRACK::App] Playing: %s\n", v.name)
 					fmt.println(i, app_state.current_item_playing_index, is_selected)
 					app_state.all_songs_item_playling = v
+					app_state.current_song_playing = v
 					app_state.playlist_item_clicked = true
 					app_state.current_item_playing_index = i
 					audio.update_path(audio_state, v.fullpath)
@@ -213,7 +228,7 @@ top_right_panel :: proc(
 		}
 
 		im.EndChild()
-		sync.mutex_unlock(&app_state.mutex)
+		// sync.mutex_unlock(&app_state.mutex)
 	}
 	im.End()
 
@@ -299,19 +314,16 @@ bottom_panel :: proc(
 		draw_audio_progress_bar_and_volume_bar(audio_state)
 
 		im.Dummy({0, 20})
-		sync.mutex_lock(&app_state.mutex)
-		im.Dummy({20, 0})
-		im.SameLine()
-		im.Text(
-			app_state.current_item_playing_index == -1 ? "" : display_songs[app_state.current_item_playing_index].metadata.title,
-		)
-		im.Dummy({20, 0})
-		im.SameLine()
 
-		im.Text(
-			app_state.current_item_playing_index == -1 ? "" : display_songs[app_state.current_item_playing_index].metadata.artist,
-		)
-		sync.mutex_unlock(&app_state.mutex)
+		if len(app_state.current_song_playing.metadata.title) > 0 &&
+		   len(app_state.current_song_playing.metadata.artist) > 0 {
+			im.Dummy({20, 0})
+			im.SameLine()
+			im.Text(app_state.current_song_playing.metadata.title)
+			im.Dummy({20, 0})
+			im.SameLine()
+			im.Text(app_state.current_song_playing.metadata.artist)
+		}
 	}
 	im.End()
 

@@ -29,14 +29,20 @@ AppState :: struct {
 	current_item_playing_index: int,
 	search_result_index:        int,
 	all_songs:                  [dynamic]common.FileEntry,
-	clicked_playlist:           [dynamic]common.FileEntry,
+	// clicked_playlist:           [dynamic]common.FileEntry,
 	playlist_item_clicked:      bool,
 	total_files:                int,
 	taglib_total_duration:      time.Duration,
 	taglib_file_count:          int,
 	all_files_scanned_donr:     bool,
-	show_search_results:     bool,
-	show_visualizer: bool, 
+	show_search_results:        bool,
+	show_visualizer:            bool,
+	show_clicked_playlist:      bool,
+	clicked_playlist:           ^common.Playlist,
+	scan_playlist_done:         ^bool,
+	clicked_playlist_entries:   ^[dynamic]common.FileEntry,
+
+	current_song_playing: common.FileEntry
 }
 
 g_app: ^AppState
@@ -44,6 +50,7 @@ g_app: ^AppState
 init_app :: proc() -> ^AppState {
 	state := new(AppState)
 	state.playlist_index = -1 // -1 = all the songs playlist
+	state.clicked_playlist_entries = new([dynamic]common.FileEntry)
 	return state
 }
 
@@ -53,21 +60,32 @@ load_files_from_pl_thread :: proc(
 	mutex: ^sync.Mutex,
 	shared: ^[dynamic]common.FileEntry,
 	pl_index: int,
-	plists: ^[dynamic]pl.Playlist,
+	plists: ^[dynamic]common.Playlist,
 ) {
+	fmt.println("tester 1")
 	playlist := plists[pl_index]
+	fmt.println(plists)
 	sync.mutex_lock(mutex)
 	clear(shared)
 	sync.mutex_unlock(mutex)
+	fmt.println("tester 2")
+	fmt.println(len(playlist.entries))
 	for p, i in playlist.entries {
 
 		dir_path := p.fullpath
+		fmt.println("tester 3", p)
 		dir_handle, err := os.open(strings.clone_from_cstring(dir_path))
+		fmt.println("tester 4")
+		if err != nil {
+			fmt.println("Failed to open directory: ", err)
+			fmt.println("File that failed: ", p.fullpath)
+		}
 		if err != os.ERROR_NONE {
 			fmt.println("Failed to open directory: ", err)
 			fmt.println("File that failed: ", p.fullpath)
 			continue
 		}
+		fmt.println("tester 5")
 		defer os.close(dir_handle)
 		// Read directory entries
 		file_info, fstat_err := os.fstat(dir_handle)
@@ -78,13 +96,13 @@ load_files_from_pl_thread :: proc(
 		}
 
 
-		sync.mutex_lock(mutex)
 		entry := common.FileEntry {
 			info           = file_info,
 			name           = fmt.ctprint(file_info.name),
 			fullpath       = fmt.ctprint(file_info.fullpath),
 			lowercase_name = strings.to_lower(file_info.name),
 		}
+		sync.mutex_lock(mutex)
 		append(shared, entry)
 		// fmt.printf("loaded %d file from playlist of %d songs\n", len(shared), len(playlist.entries))
 		sync.mutex_unlock(mutex)
@@ -133,7 +151,6 @@ search_song_2 :: proc(
 ) {
 	sync.mutex_lock(search_mutex)
 	clear(search_results)
-	sync.mutex_unlock(search_mutex)
 
 	query := strings.to_lower(query)
 
@@ -159,7 +176,7 @@ search_song_2 :: proc(
 			}
 
 
-			album_items : [dynamic]common.FileEntry
+			album_items: [dynamic]common.FileEntry
 			// for file in files {
 			// 	if strings.contains(strings.to_lower(strings.clone_from_cstring(file.metadata.album)), query) {
 			// 		// sync.mutex_lock(search_mutex)
@@ -169,7 +186,7 @@ search_song_2 :: proc(
 			// 	}
 			// }
 			// item.files = album_items
-			
+
 			sync.mutex_lock(search_mutex)
 			append(search_results, item)
 			sync.mutex_unlock(search_mutex)
@@ -202,21 +219,14 @@ search_song_2 :: proc(
 				label = strings.clone_to_cstring(label),
 				files = match,
 			}
-			sync.mutex_lock(search_mutex)
 			append(search_results, item)
-			sync.mutex_unlock(search_mutex)
 		}
 	}
 
-	sync.mutex_lock(&state.mutex)
 	state.is_searching = true
 	sync.mutex_unlock(&state.mutex)
 }
 
-
-// search_album :: proc (&album) {
-
-// }
 
 search_song :: proc(
 	state: ^AppState,
@@ -374,7 +384,6 @@ scan_all_files :: proc(root: string) {
 		return
 	}
 
-	fmt.println("Read so many bytes: ", len(bytes_read))
 	content := string(bytes_read)
 	lines := strings.split_lines(content)
 
