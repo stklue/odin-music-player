@@ -11,16 +11,11 @@ import "core:strings"
 import image "vendor:stb/image"
 
 import im "../../odin-imgui"
-import "../../odin-imgui/imgui_impl_glfw"
-import "../../odin-imgui/imgui_impl_opengl3"
 
 import audio "../audio_state"
 import "core:math"
 import "core:sync"
 import "core:thread"
-import "core:time"
-import gl "vendor:OpenGL"
-import "vendor:glfw"
 import ma "vendor:miniaudio"
 
 draw_item_selectable :: proc(
@@ -75,7 +70,7 @@ draw_item_selectable :: proc(
 
 // draw music information bar
 draw_information_bar :: proc(
-	file_entry: common.FileEntry,
+	file_entry: common.Song,
 	selected: bool,
 	// bg_color: u32,
 	flags: im.SelectableFlags,
@@ -231,7 +226,7 @@ draw_custom_button :: proc(
 
 draw_search_bar :: proc(id: string, buffer: ^[256]u8, size: im.Vec2) -> bool {
 	rounding: f32 = 6.0
-	padding := im.Vec2{10, 6}
+	padding := im.Vec2{3, 8}
 
 	bg_color := color_vec4_to_u32({0.10, 0.12, 0.20, 0.75}) // deep bluish background
 	border_color := color_vec4_to_u32({0.35, 0.60, 1.00, 0.45}) // light electric blue border
@@ -268,7 +263,9 @@ draw_search_bar :: proc(id: string, buffer: ^[256]u8, size: im.Vec2) -> bool {
 
 	// Actual input field
 	cstring_buffer := cast(cstring)(&buffer[0])
-	edited := im.InputTextWithHint(text(id), "Search...", cstring_buffer, 100, flags)
+	im.PushItemWidth(input_size.x)
+	edited := im.InputTextWithHint(text(id), "Search songs, albums, artists...", cstring_buffer, 100, flags)
+	im.PopItemWidth()
 
 	// Cleanup
 	im.PopStyleColor(3)
@@ -286,8 +283,29 @@ draw_playlist_items :: proc(audio_state: ^audio.AudioState, size: [2]f32) {
 
 		if draw_information_bar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
 			fmt.printf("[TRACK::App] Playing: %s\n", v.name)
+			app.g_app.play_queue_item_playing = v
+			app.g_app.playlist_item_clicked = true
+			app.g_app.current_item_playing_index = i
+			audio.update_path(audio_state, v.fullpath)
+			audio.create_audio_play_thread(audio_state)
+		}
+
+		im.EndGroup()
+	}
+}
+draw_search_results_clicked :: proc(audio_state: ^audio.AudioState, size: [2]f32) {
+	// fmt.println("Hello world")
+	fmt.println(len(app.g_app.clicked_search_results_entries))
+	for v, i in app.g_app.clicked_search_results_entries {
+		fmt.println("item: ", v)
+		is_selected := app.g_app.current_item_playing_index == i
+		im.BeginGroup()
+		im.Spacing()
+
+		if draw_information_bar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
+			fmt.printf("[TRACK::App] Playing: %s\n", v.name)
 			fmt.println(i, app.g_app.current_item_playing_index, is_selected)
-			app.g_app.current_song_playing = v
+			app.g_app.play_queue_item_playing = v
 			app.g_app.playlist_item_clicked = true
 			app.g_app.current_item_playing_index = i
 			audio.update_path(audio_state, v.fullpath)

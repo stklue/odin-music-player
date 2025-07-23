@@ -1,6 +1,7 @@
 package app
 
 import "core:flags"
+import "core:slice"
 import "core:sys/windows"
 // import fe "../file"
 import taglib "../../taglib-odin"
@@ -15,34 +16,36 @@ import "core:time"
 
 
 AppState :: struct {
-	mutex:                      sync.Mutex,
+	mutex:                          sync.Mutex,
 	// current_song:
-	current_item_playing:       Maybe(common.FileEntry),
-	is_searching:               bool,
-	current_view_index:         int,
+	current_item_playing:           Maybe(common.Song),
+	is_searching:                   bool,
+	current_view_index:             int,
 	// playlist
-	playlists:                  [dynamic]pl.Playlist,
-	playlist_index:             int,
-	playlist_item_index:        int,
-	playlist_item_playling:     ^common.FileEntry,
-	all_songs_item_playling:    common.FileEntry,
-	current_item_playing_index: int,
-	search_result_index:        int,
-	all_songs:                  [dynamic]common.FileEntry,
-	// clicked_playlist:           [dynamic]common.FileEntry,
-	playlist_item_clicked:      bool,
-	total_files:                int,
-	taglib_total_duration:      time.Duration,
-	taglib_file_count:          int,
-	all_files_scanned_donr:     bool,
-	show_search_results:        bool,
-	show_visualizer:            bool,
-	show_clicked_playlist:      bool,
-	clicked_playlist:           ^common.Playlist,
-	scan_playlist_done:         ^bool,
-	clicked_playlist_entries:   ^[dynamic]common.FileEntry,
-
-	current_song_playing: common.FileEntry
+	playlists:                      [dynamic]pl.Playlist,
+	playlist_index:                 int,
+	playlist_item_index:            int,
+	playlist_item_playling:         ^common.Song,
+	all_songs_item_playling:        common.Song,
+	current_item_playing_index:     int,
+	search_result_index:            int,
+	all_songs:                      common.Songs,
+	// clicked_playlist:           common.Songs,
+	playlist_item_clicked:          bool,
+	total_files:                    int,
+	taglib_total_duration:          time.Duration,
+	taglib_file_count:              int,
+	all_files_scanned_donr:         bool,
+	show_search_results:            bool,
+	show_visualizer:                bool,
+	show_clicked_playlist:          bool,
+	clicked_playlist:               ^common.Playlist,
+	scan_playlist_done:             ^bool,
+	clicked_playlist_entries:       ^common.Songs,
+	clicked_search_results_entries: ^common.Songs,
+	play_queue:                     common.Songs,
+	play_queue_item_playing:        common.Song,
+	play_queue_index:               int,
 }
 
 g_app: ^AppState
@@ -50,7 +53,8 @@ g_app: ^AppState
 init_app :: proc() -> ^AppState {
 	state := new(AppState)
 	state.playlist_index = -1 // -1 = all the songs playlist
-	state.clicked_playlist_entries = new([dynamic]common.FileEntry)
+	state.clicked_playlist_entries = new(common.Songs)
+	state.clicked_search_results_entries = new(common.Songs)
 	return state
 }
 
@@ -58,7 +62,7 @@ init_app :: proc() -> ^AppState {
 // load files from playlist
 load_files_from_pl_thread :: proc(
 	mutex: ^sync.Mutex,
-	shared: ^[dynamic]common.FileEntry,
+	shared: ^common.Songs,
 	pl_index: int,
 	plists: ^[dynamic]common.Playlist,
 ) {
@@ -96,7 +100,7 @@ load_files_from_pl_thread :: proc(
 		}
 
 
-		entry := common.FileEntry {
+		entry := common.Song {
 			info           = file_info,
 			name           = fmt.ctprint(file_info.name),
 			fullpath       = fmt.ctprint(file_info.fullpath),
@@ -110,7 +114,7 @@ load_files_from_pl_thread :: proc(
 	}
 
 }
-load_files_thread_proc :: proc(mutex: ^sync.Mutex, shared: ^[dynamic]common.FileEntry) {
+load_files_thread_proc :: proc(mutex: ^sync.Mutex, shared: ^common.Songs) {
 	sync.mutex_lock(mutex)
 	clear(shared)
 	sync.mutex_unlock(mutex)
@@ -129,7 +133,7 @@ load_files_thread_proc :: proc(mutex: ^sync.Mutex, shared: ^[dynamic]common.File
 
 	sync.mutex_lock(mutex)
 	for file in files {
-		entry := common.FileEntry {
+		entry := common.Song {
 			info           = file,
 			name           = fmt.ctprint(file.name),
 			fullpath       = fmt.ctprint(file.fullpath),
@@ -145,12 +149,10 @@ load_files_thread_proc :: proc(mutex: ^sync.Mutex, shared: ^[dynamic]common.File
 search_song_2 :: proc(
 	state: ^AppState,
 	query: string,
-	files: ^[dynamic]common.FileEntry,
+	songs: ^common.Songs,
 	search_results: ^[dynamic]common.SearchItem,
-	search_mutex: ^sync.Mutex,
 ) {
-	sync.mutex_lock(search_mutex)
-	clear(search_results)
+	clear(search_results) // clear previous search results
 
 	query := strings.to_lower(query)
 
@@ -159,54 +161,57 @@ search_song_2 :: proc(
 	found_artists := map[string]bool{}
 
 	// Song matches are kept separate
-	song_matches: [dynamic]common.FileEntry
-
-	for file in files {
-		title := strings.to_lower(fmt.tprint(file.metadata.title))
-		album := strings.to_lower(fmt.tprint(file.metadata.album))
-		artist := strings.to_lower(fmt.tprint(file.metadata.artist))
-		filename := file.lowercase_name
+	song_matches: common.Songs
+	for song in songs {
+		title := strings.to_lower(fmt.tprint(song.metadata.title))
+		album := strings.to_lower(fmt.tprint(song.metadata.album))
+		artist := strings.to_lower(fmt.tprint(song.metadata.artist))
+		filename := song.lowercase_name
 
 		// Check for album match
 		if album != "" && strings.contains(album, query) && !found_albums[album] {
 			found_albums[album] = true
 			item := common.SearchItem {
-				kind  = .Album,
-				label = strings.clone_to_cstring(fmt.tprintf("%s (album)", file.metadata.album)),
+				kind       = .Album,
+				label      = strings.clone_to_cstring(
+					fmt.tprintf("%s (album)", song.metadata.album),
+				),
+				files_type = .List,
 			}
 
+		 
 
-			album_items: [dynamic]common.FileEntry
-			// for file in files {
-			// 	if strings.contains(strings.to_lower(strings.clone_from_cstring(file.metadata.album)), query) {
-			// 		// sync.mutex_lock(search_mutex)
-			// 		append(&album_items, file)
-			// 		// sync.mutex_unlock(search_mutex)
-
-			// 	}
-			// }
-			// item.files = album_items
-
-			sync.mutex_lock(search_mutex)
+			//  find all the items of this album
+			album_items: common.Songs
+			for s in songs {
+				// if !slice.contains(album_items[:], s) && strings.contains(album, query) {
+				// 	append(&album_items, s)
+				// }
+				if strings.contains(album, query) {
+					append(&album_items, s)
+				}
+			}
+			item.files = album_items
+			// fmt.println("query", len(album_items))
 			append(search_results, item)
-			sync.mutex_unlock(search_mutex)
 		}
 
 		// Check for artist match
 		if artist != "" && strings.contains(artist, query) && !found_artists[artist] {
 			found_artists[artist] = true
 			item := common.SearchItem {
-				kind  = .Artist,
-				label = strings.clone_to_cstring(fmt.tprintf("%s (artist)", file.metadata.artist)),
+				kind       = .Artist,
+				label      = strings.clone_to_cstring(
+					fmt.tprintf("%s (artist)", song.metadata.artist),
+				),
+				files_type = .List,
 			}
-			sync.mutex_lock(search_mutex)
 			append(search_results, item)
-			sync.mutex_unlock(search_mutex)
 		}
 
 		// Check for title or filename match
 		if strings.contains(title, query) || strings.contains(filename, query) {
-			append(&song_matches, file)
+			append(&song_matches, song)
 		}
 	}
 
@@ -215,24 +220,25 @@ search_song_2 :: proc(
 		for match in song_matches {
 			label := fmt.tprint(match.metadata.title)
 			item := common.SearchItem {
-				kind  = .Title,
-				label = strings.clone_to_cstring(label),
-				files = match,
+				kind       = .Title,
+				label      = strings.clone_to_cstring(label),
+				files      = match,
+				files_type = .Single,
 			}
 			append(search_results, item)
 		}
 	}
 
+	// fmt.println("Search output: ", len(search_results))
 	state.is_searching = true
-	sync.mutex_unlock(&state.mutex)
 }
 
 
 search_song :: proc(
 	state: ^AppState,
 	s: string,
-	files: ^[dynamic]common.FileEntry,
-	search_results: ^[dynamic]common.FileEntry,
+	files: ^common.Songs,
+	search_results: ^common.Songs,
 	search_mutex: ^sync.Mutex,
 ) {
 	sync.mutex_lock(search_mutex)
@@ -280,7 +286,7 @@ search_all_files_archive :: proc(dir: string) {
 	for entry in entries {
 		path := strings.join([]string{dir, entry.name}, "/")
 
-		item := common.FileEntry {
+		item := common.Song {
 			info           = entry,
 			name           = strings.clone_to_cstring(entry.name),
 			fullpath       = strings.clone_to_cstring(entry.fullpath),
@@ -433,7 +439,7 @@ scan_all_files :: proc(root: string) {
 		}
 		new_path, _ := strings.replace_all(path, "/", "\\")
 		// fmt.println("This is the new path: ", new_path)
-		item := common.FileEntry {
+		item := common.Song {
 			info           = file_info,
 			name           = strings.clone_to_cstring(res[1]),
 			fullpath       = strings.clone_to_cstring(file_info.fullpath),
@@ -463,7 +469,7 @@ scan_all_files :: proc(root: string) {
 
 // Writes the metadata to a textfile and then return the number of files/item written
 // path, title, artist, album, genre, year, duration
-write_metadata_to_txt :: proc(files: [dynamic]common.FileEntry) -> os.Error {
+write_metadata_to_txt :: proc(files: common.Songs) -> os.Error {
 	// write to music directory
 	path := "C:/Users/St.Klue/Music/metadata.txt"
 	handler, handl_err := os.open(path, os.O_WRONLY | os.O_CREATE | os.O_TRUNC)
@@ -513,7 +519,7 @@ Work_Item :: struct {
 // Shared data structure for threads
 Shared_Data :: struct {
 	work_queue:    [dynamic]Work_Item,
-	results:       [dynamic]common.FileEntry,
+	results:       common.Songs,
 	queue_mutex:   sync.Mutex,
 	results_mutex: sync.Mutex,
 	completed:     bool,
@@ -588,11 +594,11 @@ process_mp3_worker :: proc(shared_data: ^Shared_Data, thread_id: int) {
 }
 
 // Process a single MP3 file (your existing logic cleaned up)
-process_single_mp3 :: proc(work_item: Work_Item) -> common.FileEntry {
+process_single_mp3 :: proc(work_item: Work_Item) -> common.Song {
 	entry := work_item.file_info
 
 
-	item := common.FileEntry {
+	item := common.Song {
 		info           = entry,
 		name           = fmt.ctprint(entry.name),
 		fullpath       = fmt.ctprint(entry.fullpath),
@@ -646,17 +652,13 @@ process_single_mp3 :: proc(work_item: Work_Item) -> common.FileEntry {
 }
 
 // Main threaded search function
-search_all_files_threaded :: proc(
-	all_paths: ^[dynamic]common.FileEntry,
-	dir: string,
-	num_threads: int = 8,
-) {
+search_all_files_threaded :: proc(all_paths: ^common.Songs, dir: string, num_threads: int = 8) {
 	start_time := time.now()
 
 	// Initialize shared data
 	shared_data := Shared_Data {
 		work_queue = make([dynamic]Work_Item, 0, 3000), // Pre-allocate for ~3000 files
-		results    = make([dynamic]common.FileEntry, 0, 3000),
+		results    = make(common.Songs, 0, 3000),
 	}
 	defer {
 		// Clean up work queue
@@ -728,7 +730,7 @@ search_all_files_threaded :: proc(
 }
 
 // Optimized metadata extraction
-extract_metadata :: proc(item: ^common.FileEntry, tag: taglib.TagLib_Tag) {
+extract_metadata :: proc(item: ^common.Song, tag: taglib.TagLib_Tag) {
 	// Title processing
 	title := taglib.tag_title(tag)
 

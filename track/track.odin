@@ -1,8 +1,7 @@
-package main
+package track
 
 DISABLE_DOCKING :: #config(DISABLE_DOCKING, true)
 
-import taglib "../taglib-odin"
 import common "common"
 import "core:fmt"
 import "core:os"
@@ -80,8 +79,8 @@ main :: proc() {
 	// init app state
 	app.g_app = app.init_app()
 	root := "C:/Users/St.Klue/Music"
-	
-	all_songs := new([dynamic]common.FileEntry)
+
+	all_songs := new([dynamic]common.Song)
 	all_songs_mutex: sync.Mutex
 	all_files_scan_done: bool
 	scan_all_songs_thread := thread.create_and_start_with_poly_data3(
@@ -189,11 +188,11 @@ main :: proc() {
 				app.g_app.show_visualizer = !app.g_app.show_visualizer
 			}
 		}
-		// if im.IsKeyPressed(.F) && !io.WantCaptureKeyboard {
-		// 	//  || io.KeySuper) {
-		// 	fmt.println("pressed control F")
-		// 	im.SetKeyboardFocusHere()
-		// }
+		if im.IsKeyPressed(.F) && im.GetIO().KeyCtrl {
+			//  || io.KeySuper) {
+			fmt.println("pressed control F")
+			im.SetKeyboardFocusHere(4)
+		}
 
 		if im.IsKeyPressed(.RightArrow, true) {
 			audio.skip_2s_forward(audio_state)
@@ -212,6 +211,14 @@ main :: proc() {
 			}
 		}
 
+		// 		if (ImGui::IsKeyPressed(ImGuiKey_F1) && ImGui::GetIO().KeyCtrl) {
+		//       // Ctrl + F1 pressed
+		//   }
+
+		// if im.IsKeyPressed(.F) && im.GetIO().KeyCtrl {
+		// 	fmt.println("just press ctrl f")
+		// 	// ui.draw_search_bar2(&song_query_buffer)
+		// }
 		// ==================== Top Left ====================
 		im.SetNextWindowPos(im.Vec2{0, 0})
 		im.SetNextWindowSize(im.Vec2{third_w, top_h})
@@ -242,12 +249,12 @@ main :: proc() {
 		left_panel_window_size := im.Vec2{third_w, top_h}
 		if all_playlists_scan_done {
 			ui.top_left_panel(
+				all_songs,
 				all_playlists,
 				&all_playlists_mutex,
 				all_playlists_scan_done,
 				app.g_app,
 				&search_results,
-				&search_mutex,
 				root,
 				audio_state,
 				&song_query_buffer,
@@ -312,6 +319,7 @@ main :: proc() {
 		// ==================== Bottom ====================
 		different_playlist_songs :=
 			app.g_app.playlist_item_clicked ? display_songs : app.g_app.all_songs
+
 		ui.bottom_panel(
 			app.g_app,
 			&different_playlist_songs,
@@ -320,6 +328,12 @@ main :: proc() {
 			screen_w,
 			third_h,
 		)
+
+		// if app.g_app.show_search_bar {
+		// 	if ui.draw_search_bar2("##search-bar-2", &song_query_buffer, {10, 10}) {
+
+		// 	}
+		// }
 
 		im.Render()
 		display_w, display_h := glfw.GetFramebufferSize(window)

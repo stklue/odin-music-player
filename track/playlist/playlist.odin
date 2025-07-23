@@ -21,7 +21,7 @@ Playlist_Metadata :: struct {
 
 Playlist :: struct {
 	meta:    Playlist_Metadata,
-	entries: [dynamic]common.FileEntry,
+	entries: [dynamic]common.Song,
 }
 
 
@@ -51,7 +51,7 @@ load_zpl_playlist :: proc(path: string) -> (playlist: Playlist, ok: bool) {
 
 	playlist_res: Playlist
 
-	entries: [dynamic]common.FileEntry
+	entries: [dynamic]common.Song
 
 	root_id: u32 = 0
 	smil_id, smil_found := xml.find_child_by_ident(doc, root_id, "smil", 1)
@@ -139,7 +139,7 @@ load_zpl_playlist :: proc(path: string) -> (playlist: Playlist, ok: bool) {
 				child := &doc.elements[child_id]
 
 				if child.ident == "media" {
-					entry := common.FileEntry{}
+					entry := common.Song{}
 					file: taglib.TagLib_File
 					for attr in child.attribs {
 						if attr.key == "src" {

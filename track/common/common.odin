@@ -4,6 +4,8 @@ import "core:os"
 import "core:strings"
 import "core:sync"
 import "core:time"
+import "core:unicode/utf16"
+import "core:unicode/utf8"
 
 RepeatOption :: enum {
 	All,
@@ -12,11 +14,11 @@ RepeatOption :: enum {
 }
 
 
-FileEntry :: struct {
+Song :: struct {
 	info:            os.File_Info,
 	name:            cstring,
-	fullpath:        cstring,
-	lowercase_name:  string,
+	fullpath:        cstring, // c filepath
+	lowercase_name:  string, // for searching
 	index_all_songs: int,
 	metadata:        Metadata,
 	valid_metadata:  bool,
@@ -44,15 +46,24 @@ SongType :: enum {
 }
 
 ListOrSingle :: union {
-	[dynamic]FileEntry,
-	FileEntry,
+	[dynamic]Song,
+	Song,
 }
 
-SearchItem :: struct {
-	kind:  SongType,
-	label: cstring, // What to display in UI: e.g. "The Beatles (artist)"
-	files: ListOrSingle, // Associated files (empty for artist/album)
+FilesType :: enum {
+	List,
+	Single,
 }
+
+
+SearchItem :: struct {
+	kind:       SongType,
+	label:      cstring, // What to display in UI: e.g. "The Beatles (artist)"
+	files:      ListOrSingle, // Associated files (empty for artist/album)
+	files_type: FilesType,
+}
+
+Songs :: [dynamic]Song
 
 
 // App_Messages::enum {
@@ -63,107 +74,149 @@ SearchItem :: struct {
 // }
 
 
+import "core:text/scanner"
+
 scan_all_files :: proc(
 	all_songs_mutex: ^sync.Mutex,
-	all_songs: ^[dynamic]FileEntry,
+	all_songs: ^Songs,
 	all_files_scan_done: ^bool,
 ) {
 	stop_watch: time.Stopwatch
 	time.stopwatch_start(&stop_watch)
-	root := "C:/Users/St.Klue/Music"
+
 	metadata_file := "C:/Users/St.Klue/Music/metadata.txt"
 
-	// Check if metadata file exists first
-	if !os.exists(metadata_file) {
-		fmt.eprintln("Metadata file does not exist:", metadata_file)
+	// Read entire file efficiently
+	data, ok := os.read_entire_file(metadata_file, context.temp_allocator)
+	defer free_all(context.temp_allocator)
+	if !ok {
+		fmt.eprintln("Unable to read file", metadata_file)
 		return
 	}
 
-	bytes_read, read_error := os.read_entire_file_from_filename_or_err(metadata_file)
-	if read_error != nil {
-		fmt.eprintln("Unable to read file", metadata_file, read_error)
-		return
-	}
+	// Initialize scanner
+	s: scanner.Scanner
+	scanner.init(&s, string(data))
+	s.flags = {} // We don't need token scanning, just lines
+	s.whitespace = {'\n'} // Only treat newlines as whitespace
 
-	content := string(bytes_read)
-	lines := strings.split_lines(content)
+	// Pre-allocate songs array
+	line_count := strings.count(string(data), "\n") + 1
+	temp_songs := make([dynamic]Song, 0, line_count)
 
-	sync.mutex_lock(all_songs_mutex)
-	for line in lines {
-		// Skip empty lines
-		if strings.trim_space(line) == "" do continue
+	scanner_watch: time.Stopwatch
+	time.stopwatch_start(&scanner_watch)
 
-		res, alloc_err := strings.split(line, "=x=")
-		if alloc_err != nil {
-			fmt.println("Allocator error for string split", alloc_err)
-			return
-		}
+	current_line: strings.Builder
+	strings.builder_init(&current_line)
 
-		if len(res) == 1 {
-			// end of files reached
-			continue
-		}
-		// Check if we have enough parts
-		if len(res) < 2 {
-			fmt.println("Invalid line format (not enough parts):", line)
-			continue
-		}
-
-		// Use filepath.join for proper path construction
-		path := strings.join([]string{res[0], res[1]}, "/")
-
-		// Check if file exists before trying to open it
-		if !os.exists(path) {
-			fmt.println("File does not exist:", path)
-			continue
-		}
-
-		handler, handler_err := os.open(path, os.O_RDONLY)
-		if handler_err != nil {
-			fmt.println("Error opening file", path, handler_err)
-			continue
-		}
-		defer os.close(handler) // Important: close the file handle
-
-		file_info, read_err := os.fstat(handler)
-		if read_err != nil {
-			fmt.println("Error getting file info", path, read_err)
-			continue
-		}
-		new_path, _ := strings.replace_all(path, "/", "\\")
-		item := FileEntry {
-			info           = file_info,
-			name           = strings.clone_to_cstring(res[1]),
-			fullpath       = strings.clone_to_cstring(file_info.fullpath),
-			lowercase_name = strings.to_lower(res[1]),
-			dir            = new_path,
-		}
-
-		// Check if we have enough metadata fields
-		if len(res) >= 7 {
-			item.metadata.title = strings.clone_to_cstring(res[2])
-			item.metadata.artist = strings.clone_to_cstring(res[3])
-			item.metadata.album = strings.clone_to_cstring(res[4])
-			item.metadata.year = strings.clone_to_cstring(res[5])
-			item.metadata.genre = strings.clone_to_cstring(res[6])
+	for scanner.peek(&s) != scanner.EOF {
+		ch := scanner.next(&s)
+		if ch == '\n' {
+			// Process complete line
+			line := strings.to_string(current_line)
+			if line != "" {
+				process_line(&line, &temp_songs)
+			}
+			strings.builder_reset(&current_line)
 		} else {
-			fmt.println("Warning: incomplete metadata for", path)
+			strings.write_rune(&current_line, ch)
 		}
-
-		item.valid_metadata = false
-		append(all_songs, item)
 	}
+	time.stopwatch_stop(&scanner_watch)
+	fmt.printfln("Scanning processs took %v", scanner_watch._accumulation)
+
+	// Process last line if it wasn't terminated with newline
+	if strings.builder_len(current_line) > 0 {
+		line := strings.to_string(current_line)
+		process_line(&line, &temp_songs)
+	}
+
+	strings.builder_destroy(&current_line)
+
+	// Bulk transfer to shared collection
+	sync.mutex_lock(all_songs_mutex)
+	// reserve(all_songs, len(temp_songs))
+	append(all_songs, ..temp_songs[:])
 	all_files_scan_done^ = true
 	sync.mutex_unlock(all_songs_mutex)
+
 	time.stopwatch_stop(&stop_watch)
-	fmt.printfln(
-		"Found %d files in %v",
-		len(all_songs),
-		stop_watch._accumulation,
-	)
+	fmt.printfln("Processed %d files in %v", len(temp_songs), stop_watch._accumulation)
 }
 
+time_proc :: proc(message: string, run: proc()) {
+	sw: time.Stopwatch
+	time.stopwatch_start(&sw)
+	run()
+	time.stopwatch_stop(&sw)
+	fmt.printfln("%s %v", message, sw._accumulation)
+}
 
+process_line :: proc(line: ^string, songs: ^[dynamic]Song) {
+	// Skip empty lines
+	if strings.trim_space(line^) == "" do return
+
+	// Optimized splitting
+	parts: [7]string
+	count := 0
+
+	for s in strings.split_iterator(line, "=x=") {
+		if count >= 7 do break
+		parts[count] = s
+		count += 1
+	}
+
+	if count < 2 do return // Invalid line format
+
+	// Build path efficiently
+	path := fmt.tprintf("%s/%s", parts[0], parts[1])
+
+	// TODO: if this is stil needed can scedule in a different thread
+	// resulted in 94% of time spend, so approximately 940ms for 1s run
+	// // Try to open file directly (skip exists check)
+	// os_open_handler_time: time.Stopwatch
+	// time.stopwatch_start(&os_open_handler_time)
+	// handler, handler_err := os.open(path)
+	// if handler_err != os.ERROR_NONE {
+	// 	return
+	// }
+	// time.stopwatch_stop(&os_open_handler_time)
+	// // fmt.printfln("Os Open took %v", os_open_handler_time._accumulation)
+	// defer os.close(handler)
+
+	// fstat_time: time.Stopwatch
+	// time.stopwatch_start(&fstat_time)
+	// file_info, read_err := os.fstat(handler)
+	// if read_err != os.ERROR_NONE {
+	// 	return
+	// }
+	// time.stopwatch_stop(&fstat_time)
+	// fmt.printfln("Fstat took %v", fstat_time._accumulation)
+
+	new_path, was_alloc := strings.replace_all(path, "/", "\\")
+	// fmt.printfln("New %s",  windows.utf8_to_wstring(new_path))
+	// fmt.println("Os", file_info.fullpath)
+	item := Song {
+		// info           = file_info,
+		name           = strings.clone_to_cstring(parts[1]),
+		// fullpath       = strings.clone_to_cstring(file_info.fullpath),
+		fullpath       = strings.clone_to_cstring(new_path),
+		lowercase_name = strings.to_lower(parts[1]),
+		dir            = new_path,
+		valid_metadata = false,
+	}
+
+	if count >= 7 {
+		item.metadata.title = strings.clone_to_cstring(parts[2])
+		item.metadata.artist = strings.clone_to_cstring(parts[3])
+		item.metadata.album = strings.clone_to_cstring(parts[4])
+		item.metadata.year = strings.clone_to_cstring(parts[5])
+		item.metadata.genre = strings.clone_to_cstring(parts[6])
+	}
+
+	append(songs, item)
+}
 Playlist_Metadata :: struct {
 	total_duration: string,
 	item_count:     string,
@@ -171,7 +224,6 @@ Playlist_Metadata :: struct {
 	title:          string,
 }
 
-Songs :: [dynamic]FileEntry
 Playlist :: struct {
 	meta:    Playlist_Metadata,
 	entries: Songs,
@@ -282,7 +334,7 @@ scan_zpl_playlist :: proc(path: string) -> (playlist: Playlist, ok: bool) {
 
 				unknown_title: cstring
 				if child.ident == "media" {
-					entry := FileEntry{}
+					entry := Song{}
 					for attr in child.attribs {
 						if attr.key == "src" {
 							entry.fullpath = strings.clone_to_cstring(attr.val)
@@ -373,7 +425,7 @@ scan_all_playlists :: proc(
 scan_playlist_entries :: proc(
 	playlist_mutex: ^sync.Mutex,
 	playlist: ^Playlist,
-	playlist_entries: ^[dynamic]FileEntry,
+	playlist_entries: ^[dynamic]Song,
 	scan_playlist_done: ^bool,
 ) {
 	stop_watch: time.Stopwatch
@@ -401,7 +453,7 @@ scan_playlist_entries :: proc(
 			fmt.println("Failed to read file: ", fstat_err)
 			continue
 		}
-		// entry := FileEntry {
+		// entry := Song {
 		// 	info           = file_info,
 		// 	name           = strings.clone_to_cstring(file_info.name),
 		// 	fullpath       = strings.clone_to_cstring(file_info.fullpath),
@@ -427,3 +479,93 @@ scan_playlist_entries :: proc(
 		stop_watch._accumulation,
 	)
 }
+
+
+import taglib "../../taglib-odin"
+import "core:mem"
+import image "vendor:stb/image"
+
+// load album images
+// extract_album_artwork :: proc(file: taglib.TagLib_File) {
+//     // Get complex properties (for artwork)
+//     keys := taglib.complex_property_keys(file)
+//     if keys == nil {
+//         return
+//     }
+//     defer taglib.complex_property_free_keys(keys)
+
+//     // Look for picture properties
+//     key_ptr := keys
+//     for key_ptr^ != nil {
+//         key := string((key_ptr^)^)
+
+//         // Common picture property keys
+//         if strings.contains(key, "PICTURE") || 
+//            strings.contains(key, "APIC") || 
+//            strings.contains(key, "COVR") ||
+//            key == "METADATA_BLOCK_PICTURE" {
+
+//             props := taglib.complex_property_get(file, key_ptr^)
+//             if props != nil {
+//                 defer taglib.complex_property_free(props)
+
+//                 picture_data: taglib.TagLib_Complex_Property_Picture_Data
+//                 taglib.picture_from_complex_property(props, &picture_data)
+
+//                 if picture_data.data != nil && picture_data.size > 0 {
+//                     load_artwork_from_data(picture_data.data, picture_data.size)
+//                     break
+//                 }
+//             }
+//         }
+
+//         key_ptr = mem.ptr_offset(key_ptr, 1)
+//     }
+// }
+
+// load_artwork_from_data :: proc(data: cstring, size: u32) {
+//     // Convert cstring data to []u8
+//     data_slice := ([^]u8)(data)[:size]
+
+//     // Load image using stb_image
+//     channels: int
+//     width, height := image.load_from_memory(
+//         raw_data(data_slice), 
+//         c.int(size), 
+//         &player.artwork_width, 
+//         &player.artwork_height, 
+//         &channels, 
+//         4 // Force RGBA
+//     )
+
+//     if width == nil {
+//         fmt.println("Failed to load artwork image")
+//         return
+//     }
+//     defer image.image_free(width)
+
+//     // Create OpenGL texture
+//     gl.GenTextures(1, &player.artwork_texture)
+//     gl.BindTexture(gl.TEXTURE_2D, player.artwork_texture)
+
+//     gl.TexImage2D(
+//         gl.TEXTURE_2D, 
+//         0, 
+//         gl.RGBA, 
+//         player.artwork_width, 
+//         player.artwork_height, 
+//         0, 
+//         gl.RGBA, 
+//         gl.UNSIGNED_BYTE, 
+//         width
+//     )
+
+//     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+//     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+//     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+//     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+
+//     player.has_artwork = true
+
+//     fmt.printf("Loaded artwork: %dx%d\n", player.artwork_width, player.artwork_height)
+// }

@@ -1,2 +1,2 @@
 run:
-	odin build track -debug -file -out:track-out.exe -o:speed
+	odin build track -show-timings -debug -out:bin/debug/player.exe -o:speed

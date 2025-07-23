@@ -116,7 +116,6 @@ play_audio :: proc(state: ^AudioState) {
 	// Fixed windows path problems; TODO: Should change the full_path to this
 	str_path := strings.clone_from_cstring(state.path)
 	wide_path := windows.utf8_to_wstring(str_path)
-	fmt.println("The wide path: ", wide_path)
 	// defer free(wide_path)
 	data, ok := os.read_entire_file_from_filename(str_path) // []byte
 	if !ok {

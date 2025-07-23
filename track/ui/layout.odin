@@ -38,12 +38,12 @@ color_vec4_to_u32 :: proc(c: Vec4) -> u32 {
 
 
 top_left_panel :: proc(
+	all_songs: ^[dynamic]common.Song,
 	playlists: ^[dynamic]common.Playlist,
 	playlists_mutex: ^sync.Mutex,
 	all_playlists_scan_done: bool,
 	app_state: ^app.AppState,
 	search_results: ^[dynamic]common.SearchItem,
-	search_mutex: ^sync.Mutex,
 	root: string,
 	audio_state: ^audio.AudioState,
 	query_buffer: ^[256]u8,
@@ -54,18 +54,17 @@ top_left_panel :: proc(
 		size := im.GetContentRegionAvail()
 
 		// === Search Bar ===
-		im.Dummy({0, 20}) 
-		im.Dummy({10, 0}) 
+		im.Dummy({0, 20})
+		im.Dummy({10, 0})
 		im.SameLine()
 		bar_size := im.Vec2{size.x - offset_x, 40} // includes padding space
 		draw_search_bar("##search-bar", query_buffer, bar_size)
 		if im.IsItemEdited() {
-			thread.create_and_start_with_poly_data5(
+			thread.create_and_start_with_poly_data4(
 				app.g_app,
 				strings.clone_from_cstring(cast(cstring)(&query_buffer[0])),
-				&app.g_app.all_songs,
+				all_songs,
 				search_results,
-				search_mutex,
 				app.search_song_2,
 			)
 		}
@@ -123,7 +122,7 @@ top_left_panel :: proc(
 						app.g_app.playlist_index = i
 						app.g_app.clicked_playlist = &playlists[i]
 						app.g_app.show_clicked_playlist = true
-					
+
 						thread.create_and_start_with_poly_data4(
 							&app.g_app.mutex,
 							app.g_app.clicked_playlist,
@@ -134,27 +133,59 @@ top_left_panel :: proc(
 					}
 				}
 			} else {
+				// drawing search results
 				if len(search_results) > 0 && len(search_results) < 100 {
 					for search_result, i in search_results {
 						currently_selected := app.g_app.search_result_index == i
-						switch search_result.kind {
-						case .Album, .Artist, .Title:
-							if draw_item_selectable(
-								search_result.label,
-								currently_selected,
-								{},
-								{size.x - offset_x, 30},
-								{10, 10},
-							) {
-								if search_result.kind == .Title {
-									#partial switch file_type in search_result.files {
-									case common.FileEntry:
-										audio.update_path(audio_state, file_type.fullpath)
-										audio.create_audio_play_thread(audio_state)
-									}
+						// switch &file_type in search_result.files {
+						// 	case common.Song:
+						// 		clear(app_state.clicked_search_results_entries)
+						// 		append(app_state.clicked_search_results_entries, file_type)
+						// audio.update_path(audio_state, file_type.fullpath)
+						// audio.create_audio_play_thread(audio_state)
+
+						if draw_item_selectable(
+							search_result.label,
+							currently_selected,
+							{},
+							{size.x - offset_x, 30},
+							{10, 10},
+						) {
+							app_state.show_search_results = true
+							switch search_result.kind {
+							case .Title:
+								#partial switch file_type in search_result.files {
+								case common.Song:
+									clear(app_state.clicked_search_results_entries)
+									append(app_state.clicked_search_results_entries, file_type)
+								}
+							case .Album, .Artist:
+								#partial switch &file_type in search_result.files {
+								case [dynamic]common.Song:
+									clear(app_state.clicked_search_results_entries)
+									app_state.clicked_search_results_entries = &file_type
+								// clear(app_state.clicked_search_results_entries)
+								// append(
+								// 	app_state.clicked_search_results_entries,
+								// 	..file_type[:],
+								// )
 								}
 							}
+							// if search_result.kind == .Title {
+							// 	switch &file_type in search_result.files {
+							// 	case common.Song:
+							// 		clear(app_state.clicked_search_results_entries)
+							// 		append(app_state.clicked_search_results_entries, file_type)
+							// 		// audio.update_path(audio_state, file_type.fullpath)
+							// 		// audio.create_audio_play_thread(audio_state)
+
+							// 	case [dynamic]common.Song:
+							// 		app_state.clicked_search_results_entries = &file_type
+							// 	}
+
+							// }
 						}
+
 					}
 				}
 			}
@@ -167,7 +198,7 @@ top_left_panel :: proc(
 
 }
 top_right_panel :: proc(
-	all_songs: ^[dynamic]common.FileEntry,
+	all_songs: ^[dynamic]common.Song,
 	app_state: ^app.AppState,
 	bolt_font: ^im.Font,
 	audio_state: ^audio.AudioState,
@@ -206,6 +237,8 @@ top_right_panel :: proc(
 			render_audio_visualizer(audio_state, pos, size)
 		} else if app.g_app.show_clicked_playlist {
 			draw_playlist_items(audio_state, size)
+		} else if app.g_app.show_search_results {
+			draw_search_results_clicked(audio_state, size)
 		} else {
 			for v, i in all_songs {
 				is_selected := app_state.current_item_playing_index == i
@@ -213,12 +246,17 @@ top_right_panel :: proc(
 				im.Spacing()
 
 				if draw_information_bar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
+					fmt.println("Started new play queue")
 					fmt.printf("[TRACK::App] Playing: %s\n", v.name)
-					fmt.println(i, app_state.current_item_playing_index, is_selected)
+					copy_slice(app_state.play_queue[:], all_songs[:])
+					app_state.play_queue_index = i
+
 					app_state.all_songs_item_playling = v
-					app_state.current_song_playing = v
+					app_state.play_queue_item_playing = v
 					app_state.playlist_item_clicked = true
 					app_state.current_item_playing_index = i
+					
+
 					audio.update_path(audio_state, v.fullpath)
 					audio.create_audio_play_thread(audio_state)
 				}
@@ -235,7 +273,7 @@ top_right_panel :: proc(
 }
 bottom_panel :: proc(
 	app_state: ^app.AppState,
-	display_songs: ^[dynamic]common.FileEntry,
+	display_songs: ^[dynamic]common.Song,
 	audio_state: ^audio.AudioState,
 	top_h, screen_w, third_h: f32,
 ) {
@@ -315,14 +353,14 @@ bottom_panel :: proc(
 
 		im.Dummy({0, 20})
 
-		if len(app_state.current_song_playing.metadata.title) > 0 &&
-		   len(app_state.current_song_playing.metadata.artist) > 0 {
+		if len(app_state.play_queue_item_playing.metadata.title) > 0 &&
+		   len(app_state.play_queue_item_playing.metadata.artist) > 0 {
 			im.Dummy({20, 0})
 			im.SameLine()
-			im.Text(app_state.current_song_playing.metadata.title)
+			im.Text(app_state.play_queue_item_playing.metadata.title)
 			im.Dummy({20, 0})
 			im.SameLine()
-			im.Text(app_state.current_song_playing.metadata.artist)
+			im.Text(app_state.play_queue_item_playing.metadata.artist)
 		}
 	}
 	im.End()

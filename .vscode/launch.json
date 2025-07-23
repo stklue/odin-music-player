@@ -1,0 +1,15 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Track Music Player Debug",
+            "type": "gdb",
+            "target": "./bin/debug",
+            "request": "launch",
+            // "program": "${workspaceFolder}/bin/debug/track.exe",
+            // "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "valuesFormatting": "parseText"
+        }
+    ]
+}
