@@ -76,6 +76,7 @@ Songs :: [dynamic]Song
 
 import "core:text/scanner"
 
+// Loads all songs into all_songs
 scan_all_files :: proc(
 	all_songs_mutex: ^sync.Mutex,
 	all_songs: ^Songs,

@@ -264,7 +264,13 @@ draw_search_bar :: proc(id: string, buffer: ^[256]u8, size: im.Vec2) -> bool {
 	// Actual input field
 	cstring_buffer := cast(cstring)(&buffer[0])
 	im.PushItemWidth(input_size.x)
-	edited := im.InputTextWithHint(text(id), "Search songs, albums, artists...", cstring_buffer, 100, flags)
+	edited := im.InputTextWithHint(
+		text(id),
+		"Search songs, albums, artists...",
+		cstring_buffer,
+		100,
+		flags,
+	)
 	im.PopItemWidth()
 
 	// Cleanup
@@ -277,7 +283,7 @@ draw_search_bar :: proc(id: string, buffer: ^[256]u8, size: im.Vec2) -> bool {
 
 draw_playlist_items :: proc(audio_state: ^audio.AudioState, size: [2]f32) {
 	for v, i in app.g_app.clicked_playlist_entries {
-		is_selected := app.g_app.current_item_playing_index == i
+		is_selected := app.g_app.play_queue_index == i
 		im.BeginGroup()
 		im.Spacing()
 
@@ -285,7 +291,7 @@ draw_playlist_items :: proc(audio_state: ^audio.AudioState, size: [2]f32) {
 			fmt.printf("[TRACK::App] Playing: %s\n", v.name)
 			app.g_app.play_queue_item_playing = v
 			app.g_app.playlist_item_clicked = true
-			app.g_app.current_item_playing_index = i
+			app.g_app.play_queue_index = i
 			audio.update_path(audio_state, v.fullpath)
 			audio.create_audio_play_thread(audio_state)
 		}
@@ -298,16 +304,16 @@ draw_search_results_clicked :: proc(audio_state: ^audio.AudioState, size: [2]f32
 	fmt.println(len(app.g_app.clicked_search_results_entries))
 	for v, i in app.g_app.clicked_search_results_entries {
 		fmt.println("item: ", v)
-		is_selected := app.g_app.current_item_playing_index == i
+		is_selected := app.g_app.play_queue_index == i
 		im.BeginGroup()
 		im.Spacing()
 
 		if draw_information_bar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
 			fmt.printf("[TRACK::App] Playing: %s\n", v.name)
-			fmt.println(i, app.g_app.current_item_playing_index, is_selected)
+			fmt.println(i, app.g_app.play_queue_index, is_selected)
 			app.g_app.play_queue_item_playing = v
 			app.g_app.playlist_item_clicked = true
-			app.g_app.current_item_playing_index = i
+			app.g_app.play_queue_index = i
 			audio.update_path(audio_state, v.fullpath)
 			audio.create_audio_play_thread(audio_state)
 		}
@@ -403,16 +409,30 @@ draw_audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	slider_size := im.Vec2{progress_width, height}
 
 	slider_pos := im.GetCursorScreenPos()
-	slider_pos.x += left_margin // ✅ Add left margin
+	slider_pos.x += left_margin
 
 	im.SetCursorScreenPos(slider_pos)
 	im.InvisibleButton("##seek_slider", slider_size)
 
-	if im.IsItemActive() {
+
+	if im.IsItemActive() || (im.IsItemHovered() && im.IsMouseClicked(.Left)) {
 		mouse := im.GetIO().MousePos
 		new_time := ((mouse.x - slider_pos.x) / progress_width) * audio_state.duration
 		audio_state.current_time = math.clamp(new_time, 0.0, audio_state.duration)
+
+		// If this was a click (not drag), seek immediately
+		if im.IsMouseClicked(.Left) && !im.IsMouseDragging(.Left) {
+			audio.seek_to_position(audio_state, audio_state.current_time)
+		}
 	}
+
+	// When user releases mouse after dragging, seek to final position
+	if im.IsItemDeactivatedAfterEdit() {
+		audio.seek_to_position(audio_state, audio_state.current_time)
+		fmt.println("Seeked to position:", audio_state.current_time)
+	}
+
+
 	hovered := im.IsItemHovered()
 	active := im.IsItemActive()
 
@@ -448,10 +468,7 @@ draw_audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	text_pos := im.Vec2{(p0.x + p1.x - text_size.x) / 2, p1.y + 4}
 	im.DrawList_AddText(draw_list, text_pos, color_vec4_to_u32({0.9, 0.95, 1.0, 1.0}), label)
 
-	if im.IsItemDeactivatedAfterEdit() && im.IsItemHovered() && im.IsItemActive() {
-		audio.seek_to_position(audio_state, audio_state.current_time)
-		fmt.println("hello world")
-	}
+
 	im.PopID()
 
 	// ========== VOLUME SLIDER ==========
@@ -465,10 +482,19 @@ draw_audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	im.SetCursorScreenPos(volume_slider_pos)
 	im.InvisibleButton("##volume_slider", volume_slider_size)
 
-	if im.IsItemActive() {
+	// if im.IsItemActive() {
+	// 	mouse := im.GetIO().MousePos
+	// 	new_volume := (mouse.x - volume_slider_pos.x) / volume_width
+	// 	audio_state.volume = math.clamp(new_volume, 0.0, 1.0)
+	// }
+
+	if im.IsItemActive() || (im.IsItemHovered() && im.IsMouseClicked(.Left)) {
 		mouse := im.GetIO().MousePos
 		new_volume := (mouse.x - volume_slider_pos.x) / volume_width
 		audio_state.volume = math.clamp(new_volume, 0.0, 1.0)
+		audio.set_volume(audio_state, audio_state.volume)
+		// fmt.println("update volume hello world")
+
 	}
 	vol_hovered := im.IsItemHovered()
 	vol_active := im.IsItemActive()
@@ -486,11 +512,12 @@ draw_audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	vol_center := im.Vec2{v_handle_x, v_p0.y + height / 2}
 	im.DrawList_AddCircleFilled(vol_draw_list, vol_center, v_handle_radius, col_handle)
 
-	if im.IsItemDeactivatedAfterEdit() || im.IsMouseReleased(.Left) {
-		audio.set_volume(audio_state, audio_state.volume)
-		fmt.println("update volume hello world")
 
-	}
+	// if im.IsItemDeactivatedAfterEdit() || im.IsMouseReleased(.Left) {
+	// 	audio.set_volume(audio_state, audio_state.volume)
+	// 	fmt.println("update volume hello world")
+
+	// }
 
 	im.PopID()
 }

@@ -65,7 +65,7 @@ top_left_panel :: proc(
 				strings.clone_from_cstring(cast(cstring)(&query_buffer[0])),
 				all_songs,
 				search_results,
-				app.search_song_2,
+				app.search_song,
 			)
 		}
 
@@ -241,7 +241,7 @@ top_right_panel :: proc(
 			draw_search_results_clicked(audio_state, size)
 		} else {
 			for v, i in all_songs {
-				is_selected := app_state.current_item_playing_index == i
+				is_selected := app_state.play_queue_index == i
 				im.BeginGroup()
 				im.Spacing()
 
@@ -254,7 +254,7 @@ top_right_panel :: proc(
 					app_state.all_songs_item_playling = v
 					app_state.play_queue_item_playing = v
 					app_state.playlist_item_clicked = true
-					app_state.current_item_playing_index = i
+					app_state.play_queue_index = i
 					
 
 					audio.update_path(audio_state, v.fullpath)
@@ -296,12 +296,12 @@ bottom_panel :: proc(
 		im.SetCursorPosX(im.GetCursorPosX() + offset_x)
 		if im.Button("Prev") {
 			prev_path_index :=
-				app_state.current_item_playing_index - 1 >= 0 ? app_state.current_item_playing_index - 1 : 0
+				app_state.play_queue_index - 1 >= 0 ? app_state.play_queue_index - 1 : 0
 			app_state.all_songs_item_playling = app_state.all_songs[prev_path_index]
 			audio.update_path(audio_state, app_state.all_songs[prev_path_index].fullpath)
 			audio.create_audio_play_thread(audio_state)
 			sync.mutex_lock(&app_state.mutex)
-			app_state.current_item_playing_index = prev_path_index
+			app_state.play_queue_index = prev_path_index
 			sync.mutex_unlock(&app_state.mutex)
 		}
 
@@ -316,12 +316,12 @@ bottom_panel :: proc(
 		// Stop button
 		if im.Button("Next") {
 			next_path_index :=
-				app_state.current_item_playing_index + 1 >= len(app_state.all_songs) ? app_state.current_item_playing_index : app_state.current_item_playing_index + 1
+				app_state.play_queue_index + 1 >= len(app_state.all_songs) ? app_state.play_queue_index : app_state.play_queue_index + 1
 			app_state.all_songs_item_playling = app_state.all_songs[next_path_index]
 			audio.update_path(audio_state, app_state.all_songs[next_path_index].fullpath)
 			audio.create_audio_play_thread(audio_state)
 			sync.mutex_lock(&app_state.mutex)
-			app_state.current_item_playing_index = next_path_index
+			app_state.play_queue_index = next_path_index
 			sync.mutex_unlock(&app_state.mutex)
 		}
 		im.SameLine()

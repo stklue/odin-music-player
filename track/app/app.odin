@@ -6,7 +6,6 @@ import "core:sys/windows"
 // import fe "../file"
 import taglib "../../taglib-odin"
 import common "../common"
-import pl "../playlist"
 import "core:fmt"
 import "core:os"
 import "core:strings"
@@ -18,31 +17,37 @@ import "core:time"
 AppState :: struct {
 	mutex:                          sync.Mutex,
 	// current_song:
-	current_item_playing:           Maybe(common.Song),
 	is_searching:                   bool,
 	current_view_index:             int,
 	// playlist
-	playlists:                      [dynamic]pl.Playlist,
+	playlists:                      [dynamic]common.Playlist,
 	playlist_index:                 int,
 	playlist_item_index:            int,
 	playlist_item_playling:         ^common.Song,
+	
 	all_songs_item_playling:        common.Song,
-	current_item_playing_index:     int,
 	search_result_index:            int,
 	all_songs:                      common.Songs,
 	// clicked_playlist:           common.Songs,
 	playlist_item_clicked:          bool,
 	total_files:                    int,
+	
 	taglib_total_duration:          time.Duration,
 	taglib_file_count:              int,
+	
 	all_files_scanned_donr:         bool,
+	
 	show_search_results:            bool,
 	show_visualizer:                bool,
 	show_clicked_playlist:          bool,
+	
 	clicked_playlist:               ^common.Playlist,
+	
 	scan_playlist_done:             ^bool,
+	
 	clicked_playlist_entries:       ^common.Songs,
 	clicked_search_results_entries: ^common.Songs,
+	
 	play_queue:                     common.Songs,
 	play_queue_item_playing:        common.Song,
 	play_queue_index:               int,
@@ -146,7 +151,7 @@ load_files_thread_proc :: proc(mutex: ^sync.Mutex, shared: ^common.Songs) {
 }
 
 
-search_song_2 :: proc(
+search_song :: proc(
 	state: ^AppState,
 	query: string,
 	songs: ^common.Songs,
@@ -231,29 +236,6 @@ search_song_2 :: proc(
 
 	// fmt.println("Search output: ", len(search_results))
 	state.is_searching = true
-}
-
-
-search_song :: proc(
-	state: ^AppState,
-	s: string,
-	files: ^common.Songs,
-	search_results: ^common.Songs,
-	search_mutex: ^sync.Mutex,
-) {
-	sync.mutex_lock(search_mutex)
-	clear(search_results)
-	state.is_searching = true
-	sync.mutex_unlock(search_mutex)
-
-	for file in files {
-		if strings.contains(file.lowercase_name, strings.to_lower(s)) {
-			sync.mutex_lock(search_mutex)
-			append(search_results, file)
-			sync.mutex_unlock(search_mutex)
-		}
-	}
-
 }
 
 is_valid_path :: proc(path: string) -> bool {
