@@ -289,6 +289,8 @@ draw_playlist_items :: proc(audio_state: ^audio.AudioState, size: [2]f32) {
 
 		if draw_information_bar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
 			fmt.printf("[TRACK::App] Playing: %s\n", v.name)
+			clear(&app.g_app.play_queue)
+			append(&app.g_app.play_queue, ..app.g_app.clicked_playlist_entries[:])
 			app.g_app.play_queue_item_playing = v
 			app.g_app.playlist_item_clicked = true
 			app.g_app.play_queue_index = i

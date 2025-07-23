@@ -1,5 +1,6 @@
 package ui
 
+import "core:log"
 
 import im "../../odin-imgui"
 import "../../odin-imgui/imgui_impl_glfw"
@@ -246,16 +247,19 @@ top_right_panel :: proc(
 				im.Spacing()
 
 				if draw_information_bar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
-					fmt.println("Started new play queue")
+					fmt.println("[TRACK::App] Started new play queue")
 					fmt.printf("[TRACK::App] Playing: %s\n", v.name)
-					copy_slice(app_state.play_queue[:], all_songs[:])
+					// copy_slice(app_state.play_queue[:], all_songs[:])
+					append(&app_state.play_queue, ..all_songs[:])
+					// fmt.printf("[TRACK::App] items in playqueue: %d\n", len(app_state.play_queue))
+
 					app_state.play_queue_index = i
 
 					app_state.all_songs_item_playling = v
 					app_state.play_queue_item_playing = v
 					app_state.playlist_item_clicked = true
 					app_state.play_queue_index = i
-					
+
 
 					audio.update_path(audio_state, v.fullpath)
 					audio.create_audio_play_thread(audio_state)
@@ -353,14 +357,13 @@ bottom_panel :: proc(
 
 		im.Dummy({0, 20})
 
-		if len(app_state.play_queue_item_playing.metadata.title) > 0 &&
-		   len(app_state.play_queue_item_playing.metadata.artist) > 0 {
+		if len(app_state.play_queue) > 0 {
 			im.Dummy({20, 0})
 			im.SameLine()
-			im.Text(app_state.play_queue_item_playing.metadata.title)
+			im.Text(app_state.play_queue[app_state.play_queue_index].metadata.title)
 			im.Dummy({20, 0})
 			im.SameLine()
-			im.Text(app_state.play_queue_item_playing.metadata.artist)
+			im.Text(app_state.play_queue[app_state.play_queue_index].metadata.artist)
 		}
 	}
 	im.End()

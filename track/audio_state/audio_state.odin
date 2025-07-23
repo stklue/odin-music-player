@@ -388,10 +388,15 @@ update_audio :: proc(state: ^AudioState) {
 
 	// Safe to call now, *after* releasing the lock
 	if play_next {
+	
+		fmt.println("Current index: ", app.g_app.play_queue_index)
+		fmt.println("Next index: ", app.g_app.play_queue_index + 1)
+		fmt.println("SOngs in play queue: ", len(app.g_app.play_queue))
 		sync.mutex_lock(&app.g_app.mutex)
-		app.g_app.play_queue_index += 1
+		app.g_app.play_queue_index = (app.g_app.play_queue_index + 1) % len(app.g_app.play_queue)
 		sync.mutex_unlock(&app.g_app.mutex)
-		state.path = app.g_app.all_songs[app.g_app.play_queue_index].fullpath
+		
+		state.path = app.g_app.play_queue[app.g_app.play_queue_index].fullpath
 
 		create_audio_play_thread(state)
 	}
