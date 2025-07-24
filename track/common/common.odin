@@ -61,17 +61,10 @@ SearchItem :: struct {
 	label:      cstring, // What to display in UI: e.g. "The Beatles (artist)"
 	files:      ListOrSingle, // Associated files (empty for artist/album)
 	files_type: FilesType,
+	file_name: cstring, // "The Beatles"
 }
 
 Songs :: [dynamic]Song
-
-
-// App_Messages::enum {
-// 	AUDIO_PAUSE_MSG,
-// 	AUDIO_PLAY_MSG,
-// 	UI_CLICKED_DIFFERENT_SONG_MSG,
-// 	UI_
-// }
 
 
 import "core:text/scanner"
@@ -485,88 +478,3 @@ scan_playlist_entries :: proc(
 import taglib "../../taglib-odin"
 import "core:mem"
 import image "vendor:stb/image"
-
-// load album images
-// extract_album_artwork :: proc(file: taglib.TagLib_File) {
-//     // Get complex properties (for artwork)
-//     keys := taglib.complex_property_keys(file)
-//     if keys == nil {
-//         return
-//     }
-//     defer taglib.complex_property_free_keys(keys)
-
-//     // Look for picture properties
-//     key_ptr := keys
-//     for key_ptr^ != nil {
-//         key := string((key_ptr^)^)
-
-//         // Common picture property keys
-//         if strings.contains(key, "PICTURE") || 
-//            strings.contains(key, "APIC") || 
-//            strings.contains(key, "COVR") ||
-//            key == "METADATA_BLOCK_PICTURE" {
-
-//             props := taglib.complex_property_get(file, key_ptr^)
-//             if props != nil {
-//                 defer taglib.complex_property_free(props)
-
-//                 picture_data: taglib.TagLib_Complex_Property_Picture_Data
-//                 taglib.picture_from_complex_property(props, &picture_data)
-
-//                 if picture_data.data != nil && picture_data.size > 0 {
-//                     load_artwork_from_data(picture_data.data, picture_data.size)
-//                     break
-//                 }
-//             }
-//         }
-
-//         key_ptr = mem.ptr_offset(key_ptr, 1)
-//     }
-// }
-
-// load_artwork_from_data :: proc(data: cstring, size: u32) {
-//     // Convert cstring data to []u8
-//     data_slice := ([^]u8)(data)[:size]
-
-//     // Load image using stb_image
-//     channels: int
-//     width, height := image.load_from_memory(
-//         raw_data(data_slice), 
-//         c.int(size), 
-//         &player.artwork_width, 
-//         &player.artwork_height, 
-//         &channels, 
-//         4 // Force RGBA
-//     )
-
-//     if width == nil {
-//         fmt.println("Failed to load artwork image")
-//         return
-//     }
-//     defer image.image_free(width)
-
-//     // Create OpenGL texture
-//     gl.GenTextures(1, &player.artwork_texture)
-//     gl.BindTexture(gl.TEXTURE_2D, player.artwork_texture)
-
-//     gl.TexImage2D(
-//         gl.TEXTURE_2D, 
-//         0, 
-//         gl.RGBA, 
-//         player.artwork_width, 
-//         player.artwork_height, 
-//         0, 
-//         gl.RGBA, 
-//         gl.UNSIGNED_BYTE, 
-//         width
-//     )
-
-//     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-//     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-//     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-//     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-
-//     player.has_artwork = true
-
-//     fmt.printf("Loaded artwork: %dx%d\n", player.artwork_width, player.artwork_height)
-// }

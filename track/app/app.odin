@@ -24,33 +24,35 @@ AppState :: struct {
 	playlist_index:                 int,
 	playlist_item_index:            int,
 	playlist_item_playling:         ^common.Song,
-	
 	all_songs_item_playling:        common.Song,
 	search_result_index:            int,
 	all_songs:                      common.Songs,
 	// clicked_playlist:           common.Songs,
 	playlist_item_clicked:          bool,
 	total_files:                    int,
-	
 	taglib_total_duration:          time.Duration,
 	taglib_file_count:              int,
-	
 	all_files_scanned_donr:         bool,
-	
 	show_search_results:            bool,
 	show_visualizer:                bool,
 	show_clicked_playlist:          bool,
-	
 	clicked_playlist:               ^common.Playlist,
-	
 	scan_playlist_done:             ^bool,
-	
 	clicked_playlist_entries:       ^common.Songs,
 	clicked_search_results_entries: ^common.Songs,
-	
 	play_queue:                     common.Songs,
 	play_queue_item_playing:        common.Song,
 	play_queue_index:               int,
+	ui_view:                        UI_View,
+	last_view:                      UI_View, // when switching to the visualizer and back
+}
+
+
+UI_View :: enum {
+	Search,
+	All_Songs,
+	Playlist,
+	Visualizer,
 }
 
 g_app: ^AppState
@@ -60,94 +62,9 @@ init_app :: proc() -> ^AppState {
 	state.playlist_index = -1 // -1 = all the songs playlist
 	state.clicked_playlist_entries = new(common.Songs)
 	state.clicked_search_results_entries = new(common.Songs)
+	state.ui_view = .All_Songs
+	state.last_view = .All_Songs
 	return state
-}
-
-
-// load files from playlist
-load_files_from_pl_thread :: proc(
-	mutex: ^sync.Mutex,
-	shared: ^common.Songs,
-	pl_index: int,
-	plists: ^[dynamic]common.Playlist,
-) {
-	fmt.println("tester 1")
-	playlist := plists[pl_index]
-	fmt.println(plists)
-	sync.mutex_lock(mutex)
-	clear(shared)
-	sync.mutex_unlock(mutex)
-	fmt.println("tester 2")
-	fmt.println(len(playlist.entries))
-	for p, i in playlist.entries {
-
-		dir_path := p.fullpath
-		fmt.println("tester 3", p)
-		dir_handle, err := os.open(strings.clone_from_cstring(dir_path))
-		fmt.println("tester 4")
-		if err != nil {
-			fmt.println("Failed to open directory: ", err)
-			fmt.println("File that failed: ", p.fullpath)
-		}
-		if err != os.ERROR_NONE {
-			fmt.println("Failed to open directory: ", err)
-			fmt.println("File that failed: ", p.fullpath)
-			continue
-		}
-		fmt.println("tester 5")
-		defer os.close(dir_handle)
-		// Read directory entries
-		file_info, fstat_err := os.fstat(dir_handle)
-		// files, read_err := os.read_ent(dir_handle, 1024) // Read up to 1024 entries
-		if fstat_err != os.ERROR_NONE {
-			fmt.println("Failed to read file: ", fstat_err)
-			continue
-		}
-
-
-		entry := common.Song {
-			info           = file_info,
-			name           = fmt.ctprint(file_info.name),
-			fullpath       = fmt.ctprint(file_info.fullpath),
-			lowercase_name = strings.to_lower(file_info.name),
-		}
-		sync.mutex_lock(mutex)
-		append(shared, entry)
-		// fmt.printf("loaded %d file from playlist of %d songs\n", len(shared), len(playlist.entries))
-		sync.mutex_unlock(mutex)
-		// get lock for playlists
-	}
-
-}
-load_files_thread_proc :: proc(mutex: ^sync.Mutex, shared: ^common.Songs) {
-	sync.mutex_lock(mutex)
-	clear(shared)
-	sync.mutex_unlock(mutex)
-	dir_path := "C:/Users/St.Klue/Music/Songs"
-	dir_handle, err := os.open(dir_path)
-	if err != os.ERROR_NONE {
-		fmt.println("Failed to open directory: ", err)
-	}
-	defer os.close(dir_handle)
-	// Read directory entries
-	files, read_err := os.read_dir(dir_handle, 1024) // Read up to 1024 entries
-	if read_err != os.ERROR_NONE {
-		fmt.println("Failed to read directory: ", read_err)
-	}
-
-
-	sync.mutex_lock(mutex)
-	for file in files {
-		entry := common.Song {
-			info           = file,
-			name           = fmt.ctprint(file.name),
-			fullpath       = fmt.ctprint(file.fullpath),
-			lowercase_name = strings.to_lower(file.name),
-		}
-		append(shared, entry)
-	}
-	sync.mutex_unlock(mutex)
-	fmt.printf("loaded %d files\n", len(files))
 }
 
 
@@ -182,22 +99,9 @@ search_song :: proc(
 					fmt.tprintf("%s (album)", song.metadata.album),
 				),
 				files_type = .List,
+				file_name  = song.metadata.album,
 			}
 
-		 
-
-			//  find all the items of this album
-			album_items: common.Songs
-			for s in songs {
-				// if !slice.contains(album_items[:], s) && strings.contains(album, query) {
-				// 	append(&album_items, s)
-				// }
-				if strings.contains(album, query) {
-					append(&album_items, s)
-				}
-			}
-			item.files = album_items
-			// fmt.println("query", len(album_items))
 			append(search_results, item)
 		}
 
@@ -210,6 +114,7 @@ search_song :: proc(
 					fmt.tprintf("%s (artist)", song.metadata.artist),
 				),
 				files_type = .List,
+				file_name  = song.metadata.artist,
 			}
 			append(search_results, item)
 		}
@@ -223,10 +128,11 @@ search_song :: proc(
 	// Add matching songs at the end
 	if len(song_matches) > 0 {
 		for match in song_matches {
-			label := fmt.tprint(match.metadata.title)
 			item := common.SearchItem {
 				kind       = .Title,
-				label      = strings.clone_to_cstring(label),
+				label      = strings.clone_to_cstring(
+					fmt.tprintf("%s (song)", match.metadata.title),
+				),
 				files      = match,
 				files_type = .Single,
 			}
@@ -236,6 +142,26 @@ search_song :: proc(
 
 	// fmt.println("Search output: ", len(search_results))
 	state.is_searching = true
+}
+
+
+search_album :: proc(all_songs: ^common.Songs, album_name: cstring, album: ^common.Songs) {
+	for song in all_songs {
+		if song.metadata.album == album_name {
+			append(album, song)
+		}
+	}
+}
+
+search_artist :: proc(all_songs: ^common.Songs, artist_name: cstring, artist: ^common.Songs) {
+	for song in all_songs {
+		if strings.contains(fmt.tprint(song.metadata.artist), fmt.tprint(artist_name)) {
+			append(artist, song)
+		}
+		if strings.contains(fmt.tprint(song.metadata.title), fmt.tprint(artist_name)) {
+			append(artist, song)
+		}
+	}
 }
 
 is_valid_path :: proc(path: string) -> bool {

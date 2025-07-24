@@ -46,7 +46,7 @@ AudioState :: struct {
 init_audio_state :: proc() -> ^AudioState {
 	state := new(AudioState)
 	state.volume = 0.3 // Default volume
-	state.repeat_option = .One
+	state.repeat_option = .All
 	// sync.mutext_(&state.mutex)
 	return state
 }
@@ -388,10 +388,6 @@ update_audio :: proc(state: ^AudioState) {
 
 	// Safe to call now, *after* releasing the lock
 	if play_next {
-	
-		fmt.println("Current index: ", app.g_app.play_queue_index)
-		fmt.println("Next index: ", app.g_app.play_queue_index + 1)
-		fmt.println("SOngs in play queue: ", len(app.g_app.play_queue))
 		sync.mutex_lock(&app.g_app.mutex)
 		app.g_app.play_queue_index = (app.g_app.play_queue_index + 1) % len(app.g_app.play_queue)
 		sync.mutex_unlock(&app.g_app.mutex)

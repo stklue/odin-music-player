@@ -72,7 +72,6 @@ draw_item_selectable :: proc(
 draw_information_bar :: proc(
 	file_entry: common.Song,
 	selected: bool,
-	// bg_color: u32,
 	flags: im.SelectableFlags,
 	size: im.Vec2,
 	padding: im.Vec2,
@@ -117,12 +116,11 @@ draw_information_bar :: proc(
 	// === Calculate section widths ===
 	content_width := size.x
 	section_widths := [5]f32 {
-		// content_width * 0.25,  // Filename - 25%
-		content_width * 0.30, // Title - 25%
-		content_width * 0.25, // Artist - 20%
+		content_width * 0.30, // Title - 30%
+		content_width * 0.25, // Artist - 25%
 		content_width * 0.15, // Album - 15%
-		content_width * 0.15, // Year - 10%
-		content_width * 0.15, // Duration - 5%
+		content_width * 0.15, // Year - 15%
+		content_width * 0.10, // Duration - 10%
 	}
 
 	// === Draw text in sections ===\
@@ -135,40 +133,94 @@ draw_information_bar :: proc(
 		file_entry.metadata.genre,
 	}
 
-	// fmt.println("Writing name: ", texts)
-
 	text_color := color_vec4_to_u32({1, 1, 1, 1})
 	current_x := pos.x + padding.x
 
+
 	for i in 0 ..< 5 {
-		if texts[i] != nil && len(string(texts[i])) > 0 {
-			// Calculate text position within this section
-			text_size := im.CalcTextSize(texts[i], nil, false, section_widths[i])
-			text_pos := im.Vec2{current_x, pos.y + padding.y + (size.y - text_size.y) / 2.0}
+		section_width := section_widths[i]
+		text := texts[i]
 
-			// Clip text to section width
-			section_max := im.Vec2 {
-				current_x + section_widths[i] - 5, // Small margin between sections
-				pos.y + full_size.y,
+		if text == nil || len(string(text)) == 0 {
+			current_x += section_width
+			continue
+		}
+		if i == 0 { 	// Title section: draw play button first, then title
+			text := texts[0]
+			if text == nil || len(string(text)) == 0 {
+				current_x += section_width
+				continue
 			}
 
-			im.DrawList_PushClipRect(draw_list, im.Vec2{current_x, pos.y}, section_max, true)
-			if selected {
-				im.DrawList_AddText(
-					draw_list,
-					text_pos,
-					color_vec4_to_u32(im.Vec4{1.0, 0.6, 0.2, 1.0}), // Warm orange
-					texts[i],
+			text_color := color_vec4_to_u32({1, 1, 1, 1})
+
+			im.DrawList_PushClipRect(
+				draw_list,
+				im.Vec2{current_x, pos.y},
+				im.Vec2{current_x + section_width - 5, pos.y + full_size.y},
+				true,
+			)
+
+			play_label: cstring = "play"
+			play_text_size := im.CalcTextSize(play_label, nil, false, section_width)
+			play_pos := im.Vec2{current_x, pos.y + padding.y + (size.y - play_text_size.y) / 2.0}
+
+			play_button_id := fmt.ctprintf("##play_button_%s", file_entry.fullpath)
+
+			if is_hovered {
+				// Draw play icon
+				im.DrawList_AddText(draw_list, play_pos, text_color, play_label)
+
+				// Setup play button over icon
+				im.SetCursorScreenPos(play_pos)
+				im.InvisibleButton(
+					play_button_id,
+					im.Vec2{play_text_size.x + 4.0, play_text_size.y + 4.0},
 				)
-			} else {
-				im.DrawList_AddText(draw_list, text_pos, text_color, texts[i])
+
+				if im.IsItemHovered() {
+					im.SetTooltip("Play song")
+				}
+				if im.IsItemClicked() {
+					fmt.println("Clicked play for: ", file_entry.metadata.title)
+				}
 			}
+
+			// Now draw the title after the play button (with padding)
+			text_title := texts[0]
+			title_text_size := im.CalcTextSize(text, nil, false, section_width)
+			title_pos := im.Vec2 {
+				play_pos.x + play_text_size.x + 8.0, // 8px spacing after icon
+				pos.y + padding.y + (size.y - title_text_size.y) / 2.0,
+			}
+
+			im.DrawList_AddText(draw_list, title_pos, text_color, text_title)
 
 			im.DrawList_PopClipRect(draw_list)
+
+		} else {
+			// Draw remaining sections (artist, album, etc.)
+			text := texts[i]
+			if text != nil && len(string(text)) > 0 {
+				text_size := im.CalcTextSize(text, nil, false, section_width)
+				text_pos := im.Vec2{current_x, pos.y + padding.y + (size.y - text_size.y) / 2.0}
+
+				im.DrawList_PushClipRect(
+					draw_list,
+					im.Vec2{current_x, pos.y},
+					im.Vec2{current_x + section_width - 5, pos.y + full_size.y},
+					true,
+				)
+				im.DrawList_AddText(draw_list, text_pos, text_color, text)
+				im.DrawList_PopClipRect(draw_list)
+			}
 		}
 
-		current_x += section_widths[i]
+		current_x += section_width
+
+
 	}
+
 
 	im.DrawList_ChannelsMerge(draw_list)
 
@@ -280,7 +332,6 @@ draw_search_bar :: proc(id: string, buffer: ^[256]u8, size: im.Vec2) -> bool {
 	return edited
 }
 
-
 draw_playlist_items :: proc(audio_state: ^audio.AudioState, size: [2]f32) {
 	for v, i in app.g_app.clicked_playlist_entries {
 		is_selected := app.g_app.play_queue_index == i
@@ -301,21 +352,63 @@ draw_playlist_items :: proc(audio_state: ^audio.AudioState, size: [2]f32) {
 		im.EndGroup()
 	}
 }
+
 draw_search_results_clicked :: proc(audio_state: ^audio.AudioState, size: [2]f32) {
-	// fmt.println("Hello world")
-	fmt.println(len(app.g_app.clicked_search_results_entries))
-	for v, i in app.g_app.clicked_search_results_entries {
-		fmt.println("item: ", v)
-		is_selected := app.g_app.play_queue_index == i
+	using app
+	for v, i in g_app.clicked_search_results_entries {
+		is_selected := g_app.play_queue_index == i
 		im.BeginGroup()
 		im.Spacing()
 
 		if draw_information_bar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
+			// if the song is alread playing do not start over
+			if len(g_app.play_queue) > 0 &&
+			   i < len(g_app.play_queue) &&
+			   g_app.play_queue_item_playing.name == g_app.play_queue[i].name {
+			} else {
+				fmt.printf("[TRACK::App] Playing: %s\n", v.name)
+				clear(&g_app.play_queue)
+				append(&g_app.play_queue, ..(app.g_app.clicked_search_results_entries^)[:])
+				g_app.play_queue_item_playing = v
+				g_app.playlist_item_clicked = true
+				g_app.play_queue_index = i
+				audio.update_path(audio_state, v.fullpath)
+				audio.create_audio_play_thread(audio_state)
+			}
+		}
+
+		im.EndGroup()
+	}
+}
+
+draw_all_songs :: proc(
+	all_songs: ^[dynamic]common.Song,
+	audio_state: ^audio.AudioState,
+	size: [2]f32,
+) {
+	using app
+
+	for v, i in all_songs {
+		is_selected := g_app.play_queue_index == i
+		im.BeginGroup()
+		im.Spacing()
+
+		if draw_information_bar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
+			fmt.println("[TRACK::App] Started new play queue")
 			fmt.printf("[TRACK::App] Playing: %s\n", v.name)
-			fmt.println(i, app.g_app.play_queue_index, is_selected)
-			app.g_app.play_queue_item_playing = v
-			app.g_app.playlist_item_clicked = true
-			app.g_app.play_queue_index = i
+			// copy_slice(g_app.play_queue[:], all_songs[:])
+			clear(&g_app.play_queue)
+			append(&g_app.play_queue, ..all_songs[:])
+			// fmt.printf("[TRACK::App] items in playqueue: %d\n", len(g_app.play_queue))
+
+			g_app.play_queue_index = i
+
+			g_app.all_songs_item_playling = v
+			g_app.play_queue_item_playing = v
+			g_app.playlist_item_clicked = true
+			g_app.play_queue_index = i
+
+
 			audio.update_path(audio_state, v.fullpath)
 			audio.create_audio_play_thread(audio_state)
 		}
@@ -324,16 +417,6 @@ draw_search_results_clicked :: proc(audio_state: ^audio.AudioState, size: [2]f32
 	}
 }
 
-
-clamp :: proc(value, min_value, max_value: f32) -> f32 {
-	if value < min_value {
-		return min_value
-	}
-	if value > max_value {
-		return max_value
-	}
-	return value
-}
 
 draw_custom_header :: proc(title: cstring, width: f32) {
 	header_height: f32 = 60.0

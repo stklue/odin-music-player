@@ -89,7 +89,6 @@ main :: proc() {
 		common.scan_all_files,
 	)
 
-
 	all_playlists := new([dynamic]common.Playlist)
 	all_playlists_mutex: sync.Mutex
 	all_playlists_scan_done: bool
@@ -184,7 +183,12 @@ main :: proc() {
 		// shortcut
 		if im.IsKeyPressed(.S, true) {
 			if !im.IsAnyItemActive() {
-				app.g_app.show_visualizer = !app.g_app.show_visualizer
+				if app.g_app.ui_view != .Visualizer {
+					app.g_app.ui_view = .Visualizer
+				} else {
+					app.g_app.ui_view = app.g_app.last_view
+				}
+				// app.g_app.show_visualizer = !app.g_app.show_visualizer
 			}
 		}
 		if im.IsKeyPressed(.F) && im.GetIO().KeyCtrl {

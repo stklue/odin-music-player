@@ -63,7 +63,7 @@ top_left_panel :: proc(
 		if im.IsItemEdited() {
 			thread.create_and_start_with_poly_data4(
 				app.g_app,
-				strings.clone_from_cstring(cast(cstring)(&query_buffer[0])),
+				fmt.tprint(cast(cstring)(&query_buffer[0])),
 				all_songs,
 				search_results,
 				app.search_song,
@@ -85,15 +85,20 @@ top_left_panel :: proc(
 
 			// All Songs Button
 			if draw_custom_button("All Songs", {}, {size.x - offset_x, 30}, {10, 10}) {
-				if app.g_app.playlist_index != -1 {
-					app.g_app.playlist_index = -1
-					app.g_app.current_view_index = 0
-					app.g_app.playlist_item_clicked = false
-					// sync.mutex_lock(&app.g_app.mutex)
-					// clear(&app.g_app.all_songs)
-					// sync.mutex_unlock(&app.g_app.mutex)
-					thread.create_and_start_with_poly_data(root, app.scan_all_files)
-				}
+				using app
+				clear(&g_app.play_queue)
+				append(&g_app.play_queue, ..all_songs[:])
+				g_app.ui_view = .All_Songs
+				g_app.last_view = .All_Songs
+				// if app.g_app.playlist_index != -1 {
+				// 	app.g_app.playlist_index = -1
+				// 	app.g_app.current_view_index = 0
+				// 	app.g_app.playlist_item_clicked = false
+				// 	// sync.mutex_lock(&app.g_app.mutex)
+				// 	// clear(&app.g_app.all_songs)
+				// 	// sync.mutex_unlock(&app.g_app.mutex)
+				// 	thread.create_and_start_with_poly_data(root, app.scan_all_files)
+				// }
 			}
 
 			im.Separator()
@@ -122,7 +127,9 @@ top_left_panel :: proc(
 					) {
 						app.g_app.playlist_index = i
 						app.g_app.clicked_playlist = &playlists[i]
-						app.g_app.show_clicked_playlist = true
+						// app.g_app.show_clicked_playlist = true
+						app.g_app.ui_view = .Playlist
+						app.g_app.last_view = .Playlist
 
 						thread.create_and_start_with_poly_data4(
 							&app.g_app.mutex,
@@ -152,7 +159,9 @@ top_left_panel :: proc(
 							{size.x - offset_x, 30},
 							{10, 10},
 						) {
-							app_state.show_search_results = true
+							// app_state.show_search_results = true
+							app.g_app.ui_view = .Search
+							app.g_app.last_view = .Search
 							switch search_result.kind {
 							case .Title:
 								#partial switch file_type in search_result.files {
@@ -160,17 +169,26 @@ top_left_panel :: proc(
 									clear(app_state.clicked_search_results_entries)
 									append(app_state.clicked_search_results_entries, file_type)
 								}
-							case .Album, .Artist:
-								#partial switch &file_type in search_result.files {
-								case [dynamic]common.Song:
-									clear(app_state.clicked_search_results_entries)
-									app_state.clicked_search_results_entries = &file_type
-								// clear(app_state.clicked_search_results_entries)
-								// append(
-								// 	app_state.clicked_search_results_entries,
-								// 	..file_type[:],
-								// )
-								}
+							case .Album:
+								album := new(common.Songs)
+								app.search_album(all_songs, search_result.file_name, album)
+								clear(app.g_app.clicked_search_results_entries)
+								app.g_app.clicked_search_results_entries = album
+							case .Artist:
+								artist := new(common.Songs)
+								app.search_artist(all_songs, search_result.file_name, artist)
+								clear(app.g_app.clicked_search_results_entries)
+								app.g_app.clicked_search_results_entries = artist
+							// #partial switch &file_type in search_result.files {
+							// case [dynamic]common.Song:
+							// 	clear(app_state.clicked_search_results_entries)
+							// 	app_state.clicked_search_results_entries = &file_type
+							// clear(app_state.clicked_search_results_entries)
+							// append(
+							// 	app_state.clicked_search_results_entries,
+							// 	..file_type[:],
+							// )
+							// }
 							}
 							// if search_result.kind == .Title {
 							// 	switch &file_type in search_result.files {
@@ -219,8 +237,18 @@ top_right_panel :: proc(
 		nil,
 		{.NoResize, .NoCollapse, .NoTitleBar, .NoBackground},
 	) {
-		title :=
-			app_state.playlist_index == -1 ? "All Songs" : text(app_state.clicked_playlist.meta.title)
+		using app
+		title: cstring
+
+		// app_state.playlist_index == -1 ? "All Songs" : 
+		#partial switch g_app.ui_view {
+		case .All_Songs:
+			title = "All Songs"
+		case .Search:
+			title = "Search results"
+		case .Playlist:
+			title = text(app_state.clicked_playlist.meta.title)
+		}
 
 		im.SetCursorPos(im.Vec2{0, 20})
 		im.PushFont(bolt_font)
@@ -233,41 +261,28 @@ top_right_panel :: proc(
 		size := im.GetContentRegionAvail()
 		im.BeginChild("##list-region", size) // border=true
 
-		if app.g_app.show_visualizer {
+
+		switch g_app.ui_view {
+		case .Visualizer:
 			pos := im.GetCursorScreenPos()
 			render_audio_visualizer(audio_state, pos, size)
-		} else if app.g_app.show_clicked_playlist {
-			draw_playlist_items(audio_state, size)
-		} else if app.g_app.show_search_results {
+		case .All_Songs:
+			draw_all_songs(all_songs, audio_state, size)
+		case .Search:
 			draw_search_results_clicked(audio_state, size)
-		} else {
-			for v, i in all_songs {
-				is_selected := app_state.play_queue_index == i
-				im.BeginGroup()
-				im.Spacing()
-
-				if draw_information_bar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
-					fmt.println("[TRACK::App] Started new play queue")
-					fmt.printf("[TRACK::App] Playing: %s\n", v.name)
-					// copy_slice(app_state.play_queue[:], all_songs[:])
-					append(&app_state.play_queue, ..all_songs[:])
-					// fmt.printf("[TRACK::App] items in playqueue: %d\n", len(app_state.play_queue))
-
-					app_state.play_queue_index = i
-
-					app_state.all_songs_item_playling = v
-					app_state.play_queue_item_playing = v
-					app_state.playlist_item_clicked = true
-					app_state.play_queue_index = i
-
-
-					audio.update_path(audio_state, v.fullpath)
-					audio.create_audio_play_thread(audio_state)
-				}
-
-				im.EndGroup()
-			}
+		case .Playlist:
+			draw_playlist_items(audio_state, size)
 		}
+		// if app.g_app.show_visualizer {
+		// 	pos := im.GetCursorScreenPos()
+		// 	render_audio_visualizer(audio_state, pos, size)
+		// } else if app.g_app.show_clicked_playlist {
+		// 	draw_playlist_items(audio_state, size)
+		// } else if app.g_app.show_search_results {
+		// 	draw_search_results_clicked(audio_state, size)
+		// } else {
+		// 	draw_all_songs(all_songs, audio_state, size)
+		// }
 
 		im.EndChild()
 		// sync.mutex_unlock(&app_state.mutex)
