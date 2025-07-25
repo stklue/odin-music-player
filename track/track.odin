@@ -1,12 +1,14 @@
 package track
 
+import "core:c/libc"
+import "core:mem"
 DISABLE_DOCKING :: #config(DISABLE_DOCKING, true)
 
-import common "common"
 import "core:fmt"
 import "core:os"
 import "core:strconv"
 import "core:strings"
+import media "media"
 import image "vendor:stb/image"
 
 import im "../odin-imgui"
@@ -27,11 +29,35 @@ import ui "ui"
 import gl "vendor:OpenGL"
 import "vendor:glfw"
 import ma "vendor:miniaudio"
-import vis "visualizer"
+
+import "core:log"
+
 
 main :: proc() {
+	context.logger = log.create_console_logger()
+	default_allocator := context.allocator
+	tracking_allocator: mem.Tracking_Allocator
+	mem.tracking_allocator_init(&tracking_allocator, default_allocator)
+	context.allocator = mem.tracking_allocator(&tracking_allocator)
+
+	running: bool = true // Atomic for thread safety
+
+	reset_tracking_allocator :: proc(a: ^mem.Tracking_Allocator) -> bool {
+		err := false
+		for _, value in a.allocation_map {
+			fmt.printfln("%v: Leaked %v bytes", value.location, value.size)
+			err = true
+		}
+
+		mem.tracking_allocator_clear(a)
+		return err
+	}
+
+
 	// ============== OPENGL AND GLFW INIT ===============================
-	assert(cast(bool)glfw.Init())
+	if glfw.Init() != glfw.TRUE {
+		fmt.println("Failed to initialize GLFW")
+	}
 	defer glfw.Terminate()
 
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3)
@@ -41,11 +67,17 @@ main :: proc() {
 	monitor := glfw.GetPrimaryMonitor()
 	mode := glfw.GetVideoMode(monitor)
 	window := glfw.CreateWindow(1920, 1080, "Music Player", nil, nil)
-	assert(window != nil)
+	// assert(window != nil)
+	if window == nil {
+		fmt.println("Unable to create window")
+		return
+	}
 	defer glfw.DestroyWindow(window)
+
 
 	glfw.MakeContextCurrent(window)
 	glfw.SwapInterval(1) // vsync
+	// glfw.SetKeyCallback(window, key_callback)
 
 	gl.load_up_to(3, 2, proc(p: rawptr, name: cstring) {
 		(cast(^rawptr)p)^ = glfw.GetProcAddress(name)
@@ -54,14 +86,20 @@ main :: proc() {
 
 	// ============== APP STATE AND IM GUI SETUP ===============================
 	im.CHECKVERSION()
-	im.CreateContext()
-	defer im.DestroyContext()
+	im.CreateContext(nil)
+	defer im.DestroyContext(nil)
 	io := im.GetIO()
 
 	imgui_impl_glfw.InitForOpenGL(window, true)
-	defer imgui_impl_glfw.Shutdown()
+	defer {
+		log.info("Shutting down ImGui GLFW")
+		imgui_impl_glfw.Shutdown()
+	}
 	imgui_impl_opengl3.Init("#version 150")
-	defer imgui_impl_opengl3.Shutdown()
+	defer {
+		log.info("Shutting down ImGui OpenGL3")
+		imgui_impl_opengl3.Shutdown()
+	}
 
 	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad}
 	base_font := im.FontAtlas_AddFontFromFileTTF(
@@ -79,34 +117,24 @@ main :: proc() {
 	app.g_app = app.init_app()
 	root := "C:/Users/St.Klue/Music"
 
-	all_songs := new([dynamic]common.Song)
 	all_songs_mutex: sync.Mutex
 	all_files_scan_done: bool
 	scan_all_songs_thread := thread.create_and_start_with_poly_data3(
+		&app.g_app.library,
 		&all_songs_mutex,
-		all_songs,
 		&all_files_scan_done,
-		common.scan_all_files,
+		media.scan_all_files,
 	)
 
-	all_playlists := new([dynamic]common.Playlist)
 	all_playlists_mutex: sync.Mutex
 	all_playlists_scan_done: bool
 	scan_playlists_thread := thread.create_and_start_with_poly_data3(
+		&app.g_app.library,
 		&all_playlists_mutex,
-		all_playlists,
 		&all_playlists_scan_done,
-		common.scan_all_playlists,
+		media.scan_all_playlists,
 	)
-	// ==================== loading playlists ====================
-	// thread.create_and_start_with_poly_data2(
-	// 	&app.g_app.mutex,
-	// 	&app.g_app.playlists,
-	// 	pl.load_all_zpl_playlists,
-	// )
 
-
-	// thread.destroy(scan_all_songs_thread)
 
 	// Use the sear_all_files with write metadata using taglib because it's slow
 	// app.search_all_files_threaded(&app.g_app.all_songs, root, 4)
@@ -128,7 +156,6 @@ main :: proc() {
 
 	//  initialize audio state and miniaudio engine
 	audio_state := audio.init_audio_state()
-	defer audio.destroy_audio_state(audio_state)
 	ma.engine_init(nil, &audio_state.engine)
 	defer ma.engine_uninit(&audio_state.engine)
 
@@ -141,17 +168,17 @@ main :: proc() {
 
 
 	// globals
-	search_results: [dynamic]common.SearchItem
+	search_results: [dynamic]media.SearchItem
 	search_mutex: sync.Mutex
 
 
 	//  gui state
 	song_query_buffer: [256]u8 // search buffer 
 	// Initialize once at startup
-	ui.init_visualizer()
-	vis.init_visualizer()
+	// ui.init_visualizer()
 
-	for !glfw.WindowShouldClose(window) {
+	// for !glfw.WindowShouldClose(window) && running {
+	for !glfw.WindowShouldClose(window) && sync.atomic_load(&running) {
 		glfw.PollEvents()
 
 		imgui_impl_opengl3.NewFrame()
@@ -170,10 +197,10 @@ main :: proc() {
 		right_w := screen_w - third_w // right 2/3 of width
 
 
-		// Update audio state
+		// // Update audio state
 		audio.update_audio(audio_state)
 
-		// ==================== UI Key input ====================
+		// // ==================== UI Key input ====================
 		if io.KeysDown[im.Key.Space] && im.IsKeyPressed(.Space) {
 			// Check if any text input is currently active
 			if !im.IsAnyItemActive() {
@@ -188,12 +215,9 @@ main :: proc() {
 				} else {
 					app.g_app.ui_view = app.g_app.last_view
 				}
-				// app.g_app.show_visualizer = !app.g_app.show_visualizer
 			}
 		}
 		if im.IsKeyPressed(.F) && im.GetIO().KeyCtrl {
-			//  || io.KeySuper) {
-			fmt.println("pressed control F")
 			im.SetKeyboardFocusHere(4)
 		}
 
@@ -229,23 +253,12 @@ main :: proc() {
 			ui.color_vec4_to_u32({0.45, 0.80, 1.00, 0.60}),
 		)
 
-		// sync.mutex_lock(&all_songs_mutex)
-		// if (all_files_scan_done) {
-		// 	fmt.println("Main thread. Scanning is done.")
-		// 	fmt.println("Here is the data: ", len(all_songs))
-		// } else {
-		// 	fmt.println("nothing")
-		// }
-		// sync.mutex_unlock(&all_songs_mutex)
-
 		style := im.GetStyle()
 		style.ChildRounding = 10
-		// style.WindowRounding = 40
 		left_panel_window_size := im.Vec2{third_w, top_h}
 		if all_playlists_scan_done {
 			ui.top_left_panel(
-				all_songs,
-				all_playlists,
+				&app.g_app.library.playlists,
 				&all_playlists_mutex,
 				all_playlists_scan_done,
 				app.g_app,
@@ -264,7 +277,7 @@ main :: proc() {
 		right_panel_window_size := im.Vec2{right_w, top_h}
 		if all_files_scan_done {
 			ui.top_right_panel(
-				all_songs,
+				&app.g_app.library.songs,
 				bold_header_font,
 				audio_state,
 				right_panel_window_position,
@@ -272,14 +285,8 @@ main :: proc() {
 			)
 		}
 
-		// ==================== Bottom ====================
-		ui.bottom_panel(
-			app.g_app,
-			audio_state,
-			top_h,
-			screen_w,
-			third_h,
-		)
+		// // ==================== Bottom ====================
+		ui.bottom_panel(app.g_app, audio_state, top_h, screen_w, third_h)
 
 		im.Render()
 		display_w, display_h := glfw.GetFramebufferSize(window)
@@ -289,20 +296,61 @@ main :: proc() {
 		imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
 
 		glfw.SwapBuffers(window)
+
+
+		if len(tracking_allocator.bad_free_array) > 0 {
+			for b in tracking_allocator.bad_free_array {
+				log.errorf("Bad free at: %v\n", b.location)
+			}
+			libc.getchar()
+			panic("Bad free detected")
+		}
 		free_all(context.temp_allocator) // free after every frame
 	}
+	log.info("Exiting main loop")
+	sync.atomic_store(&running, false)
 
+	// kill threads
+	// At the end of main, before cleanup
+	if all_files_scan_done {
+		thread.destroy(scan_all_songs_thread)
+	} else {
+		panic("All files thread did not manage to finish")
+	}
+	if all_playlists_scan_done {
+		thread.destroy(scan_playlists_thread)
+	} else {
+		panic("Playlists thread did not manage to finish")
+	}
 
-	// Cleanup audio on exit
-	sync.mutex_lock(&audio_state.mutex)
-	if audio_state.device != nil {
-		ma.device_stop(audio_state.device)
-		ma.device_uninit(audio_state.device)
-		free(audio_state.device)
+	// thread.destroy(app.g_app.library.search_thread)
+	thread.destroy(app.g_app.library.playlist_thread)
+
+	{
+
+		delete_dynamic_array(app.g_app.clicked_playlist_entries)
+		delete_dynamic_array(app.g_app.clicked_search_results_entries)
+		delete_dynamic_array(app.g_app.play_queue)
+		delete(app.g_app.arena.data)
+		log.info("Deleting dynamic arrays")
 	}
-	if audio_state.decoder != nil {
-		ma.decoder_uninit(audio_state.decoder)
-		free(audio_state.decoder)
+	media.delete_library(&app.g_app.library)
+	{
+		free(app.g_app)
+		log.info("Freed global app")
 	}
-	sync.mutex_unlock(&audio_state.mutex)
+	audio.destroy_audio_state(audio_state)
+	if reset_tracking_allocator(&tracking_allocator) {
+		libc.getchar()
+	}
+	mem.tracking_allocator_destroy(&tracking_allocator)
 }
+
+
+// Called when glfw keystate changes
+// key_callback :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods: i32) {
+// 	// Exit program on escape pressed
+// 	if key == glfw.KEY_ESCAPE {
+// 		running = false
+// 	}
+// }

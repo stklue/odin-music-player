@@ -1,11 +1,12 @@
 package app
 
 import "core:flags"
+import "core:mem"
 import "core:slice"
 import "core:sys/windows"
 // import fe "../file"
 import taglib "../../taglib-odin"
-import common "../common"
+import media "../media"
 import "core:fmt"
 import "core:os"
 import "core:strings"
@@ -19,28 +20,32 @@ AppState :: struct {
 	is_searching:                   bool,
 	current_view_index:             int,
 	// playlist
-	playlists:                      [dynamic]common.Playlist,
+	playlists:                      [dynamic]media.Playlist,
 	playlist_index:                 int,
 	playlist_item_index:            int,
-	playlist_item_playling:         ^common.Song,
-	all_songs_item_playling:        common.Song,
+	playlist_item_playling:         ^media.Song,
+	all_songs_item_playling:        media.Song,
 	search_result_index:            int,
-	all_songs:                      common.Songs,
-	// clicked_playlist:           common.Songs,
+	all_songs:                      media.Songs,
+	// clicked_playlist:           media.Songs,
 	playlist_item_clicked:          bool,
 	total_files:                    int,
 	taglib_total_duration:          time.Duration,
 	taglib_file_count:              int,
 	all_files_scanned_donr:         bool,
-	clicked_playlist:               ^common.Playlist,
+	clicked_playlist:               ^media.Playlist,
 	scan_playlist_done:             ^bool,
-	clicked_playlist_entries:       ^common.Songs,
-	clicked_search_results_entries: ^common.Songs,
-	play_queue:                     common.Songs,
-	play_queue_item_playing:        common.Song,
+	clicked_playlist_entries:       media.Songs,
+	clicked_search_results_entries: media.Songs,
+	play_queue:                     media.Songs,
+	play_queue_item_playing:        media.Song,
 	play_queue_index:               int,
 	ui_view:                        UI_View,
 	last_view:                      UI_View, // when switching to the visualizer and back
+	
+	library:                        media.MediaLibrary,
+	arena:                          mem.Arena, // for app cstrings allocations
+	arena_allocator:                mem.Allocator,
 }
 
 
@@ -56,19 +61,35 @@ g_app: ^AppState
 init_app :: proc() -> ^AppState {
 	state := new(AppState)
 	state.playlist_index = -1 // -1 = all the songs playlist
-	state.clicked_playlist_entries = new(common.Songs)
-	state.clicked_search_results_entries = new(common.Songs)
+	state.clicked_playlist_entries = make(media.Songs, 0, 100)
+	state.clicked_search_results_entries = make(media.Songs, 0, 3000)
+	state.play_queue = make(media.Songs, 0, 3000)
 	state.ui_view = .All_Songs
 	state.last_view = .All_Songs
+	arena_mem := make([]byte, 1 * mem.Megabyte)
+	mem.arena_init(&state.arena, arena_mem)
+	state.arena_allocator = mem.arena_allocator(&state.arena)
+	media.init_library(&state.library)
 	return state
 }
 
+delete_app :: proc() {
+	fmt.println("[APP_DELETE_APP] Deleting App memory...")
+	// delete_dynamic_array(g_app.clicked_playlist_entries)
+	delete_dynamic_array(g_app.clicked_search_results_entries)
+	delete_dynamic_array(g_app.play_queue)
+	media.delete_library(&g_app.library)
+	delete(g_app.arena.data)
+	mem.arena_free_all(&g_app.arena)
 
+	free(g_app)
+	fmt.println("Deleted/Freed App memory")
+}
 search_song :: proc(
 	state: ^AppState,
 	query: string,
-	songs: ^common.Songs,
-	search_results: ^[dynamic]common.SearchItem,
+	songs: ^media.Songs,
+	search_results: ^[dynamic]media.SearchItem,
 ) {
 	clear(search_results) // clear previous search results
 
@@ -79,7 +100,7 @@ search_song :: proc(
 	found_artists := map[string]bool{}
 
 	// Song matches are kept separate
-	song_matches: common.Songs
+	song_matches: media.Songs
 	for song in songs {
 		title := strings.to_lower(fmt.tprint(song.metadata.title))
 		album := strings.to_lower(fmt.tprint(song.metadata.album))
@@ -89,7 +110,7 @@ search_song :: proc(
 		// Check for album match
 		if album != "" && strings.contains(album, query) && !found_albums[album] {
 			found_albums[album] = true
-			item := common.SearchItem {
+			item := media.SearchItem {
 				kind       = .Album,
 				label      = strings.clone_to_cstring(
 					fmt.tprintf("%s (album)", song.metadata.album),
@@ -104,7 +125,7 @@ search_song :: proc(
 		// Check for artist match
 		if artist != "" && strings.contains(artist, query) && !found_artists[artist] {
 			found_artists[artist] = true
-			item := common.SearchItem {
+			item := media.SearchItem {
 				kind       = .Artist,
 				label      = strings.clone_to_cstring(
 					fmt.tprintf("%s (artist)", song.metadata.artist),
@@ -124,7 +145,7 @@ search_song :: proc(
 	// Add matching songs at the end
 	if len(song_matches) > 0 {
 		for match in song_matches {
-			item := common.SearchItem {
+			item := media.SearchItem {
 				kind       = .Title,
 				label      = strings.clone_to_cstring(
 					fmt.tprintf("%s (song)", match.metadata.title),
@@ -141,7 +162,7 @@ search_song :: proc(
 }
 
 
-search_album :: proc(all_songs: ^common.Songs, album_name: cstring, album: ^common.Songs) {
+search_album :: proc(all_songs: ^media.Songs, album_name: cstring, album: ^media.Songs) {
 	for song in all_songs {
 		if song.metadata.album == album_name {
 			append(album, song)
@@ -149,7 +170,7 @@ search_album :: proc(all_songs: ^common.Songs, album_name: cstring, album: ^comm
 	}
 }
 
-search_artist :: proc(all_songs: ^common.Songs, artist_name: cstring, artist: ^common.Songs) {
+search_artist :: proc(all_songs: ^media.Songs, artist_name: cstring, artist: ^media.Songs) {
 	for song in all_songs {
 		if strings.contains(fmt.tprint(song.metadata.artist), fmt.tprint(artist_name)) {
 			append(artist, song)
@@ -190,7 +211,7 @@ search_all_files_archive :: proc(dir: string) {
 	for entry in entries {
 		path := strings.join([]string{dir, entry.name}, "/")
 
-		item := common.Song {
+		item := media.Song {
 			info           = entry,
 			name           = strings.clone_to_cstring(entry.name),
 			fullpath       = strings.clone_to_cstring(entry.fullpath),
@@ -343,7 +364,7 @@ scan_all_files :: proc(root: string) {
 		}
 		new_path, _ := strings.replace_all(path, "/", "\\")
 		// fmt.println("This is the new path: ", new_path)
-		item := common.Song {
+		item := media.Song {
 			info           = file_info,
 			name           = strings.clone_to_cstring(res[1]),
 			fullpath       = strings.clone_to_cstring(file_info.fullpath),
@@ -373,7 +394,7 @@ scan_all_files :: proc(root: string) {
 
 // Writes the metadata to a textfile and then return the number of files/item written
 // path, title, artist, album, genre, year, duration
-write_metadata_to_txt :: proc(files: common.Songs) -> os.Error {
+write_metadata_to_txt :: proc(files: media.Songs) -> os.Error {
 	// write to music directory
 	path := "C:/Users/St.Klue/Music/metadata.txt"
 	handler, handl_err := os.open(path, os.O_WRONLY | os.O_CREATE | os.O_TRUNC)
@@ -423,7 +444,7 @@ Work_Item :: struct {
 // Shared data structure for threads
 Shared_Data :: struct {
 	work_queue:    [dynamic]Work_Item,
-	results:       common.Songs,
+	results:       media.Songs,
 	queue_mutex:   sync.Mutex,
 	results_mutex: sync.Mutex,
 	completed:     bool,
@@ -498,11 +519,11 @@ process_mp3_worker :: proc(shared_data: ^Shared_Data, thread_id: int) {
 }
 
 // Process a single MP3 file (your existing logic cleaned up)
-process_single_mp3 :: proc(work_item: Work_Item) -> common.Song {
+process_single_mp3 :: proc(work_item: Work_Item) -> media.Song {
 	entry := work_item.file_info
 
 
-	item := common.Song {
+	item := media.Song {
 		info           = entry,
 		name           = fmt.ctprint(entry.name),
 		fullpath       = fmt.ctprint(entry.fullpath),
@@ -556,13 +577,13 @@ process_single_mp3 :: proc(work_item: Work_Item) -> common.Song {
 }
 
 // Main threaded search function
-search_all_files_threaded :: proc(all_paths: ^common.Songs, dir: string, num_threads: int = 8) {
+search_all_files_threaded :: proc(all_paths: ^media.Songs, dir: string, num_threads: int = 8) {
 	start_time := time.now()
 
 	// Initialize shared data
 	shared_data := Shared_Data {
 		work_queue = make([dynamic]Work_Item, 0, 3000), // Pre-allocate for ~3000 files
-		results    = make(common.Songs, 0, 3000),
+		results    = make(media.Songs, 0, 3000),
 	}
 	defer {
 		// Clean up work queue
@@ -634,7 +655,7 @@ search_all_files_threaded :: proc(all_paths: ^common.Songs, dir: string, num_thr
 }
 
 // Optimized metadata extraction
-extract_metadata :: proc(item: ^common.Song, tag: taglib.TagLib_Tag) {
+extract_metadata :: proc(item: ^media.Song, tag: taglib.TagLib_Tag) {
 	// Title processing
 	title := taglib.tag_title(tag)
 

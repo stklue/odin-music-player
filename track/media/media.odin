@@ -1,11 +1,36 @@
-package common
+package media
 import "core:encoding/xml"
+import "core:log"
 import "core:os"
 import "core:strings"
 import "core:sync"
+import "core:thread"
 import "core:time"
 import "core:unicode/utf16"
 import "core:unicode/utf8"
+
+
+MediaLibrary :: struct {
+	arena:           mem.Arena,
+	songs:           Songs,
+	playlists:       [dynamic]Playlist,
+	playlist_thread: ^thread.Thread,
+	search_thread:   ^thread.Thread,
+	arena_allocator: mem.Allocator,
+}
+
+init_library :: proc(library: ^MediaLibrary) {
+	arena_mem := make([]byte, 1 * mem.Megabyte)
+	mem.arena_init(&library.arena, arena_mem)
+	library.arena_allocator = mem.arena_allocator(&library.arena)
+	library.songs = make(Songs, 0, 3000)
+}
+
+delete_library :: proc(library: ^MediaLibrary) {
+	delete_dynamic_array(library.songs)
+	delete(library.arena.data)
+	log.info("Deleted media library data")
+}
 
 RepeatOption :: enum {
 	All,
@@ -61,7 +86,7 @@ SearchItem :: struct {
 	label:      cstring, // What to display in UI: e.g. "The Beatles (artist)"
 	files:      ListOrSingle, // Associated files (empty for artist/album)
 	files_type: FilesType,
-	file_name: cstring, // "The Beatles"
+	file_name:  cstring, // "The Beatles"
 }
 
 Songs :: [dynamic]Song
@@ -71,8 +96,9 @@ import "core:text/scanner"
 
 // Loads all songs into all_songs
 scan_all_files :: proc(
+	library: ^MediaLibrary,
 	all_songs_mutex: ^sync.Mutex,
-	all_songs: ^Songs,
+	// all_songs: ^Songs,
 	all_files_scan_done: ^bool,
 ) {
 	stop_watch: time.Stopwatch
@@ -110,7 +136,7 @@ scan_all_files :: proc(
 			// Process complete line
 			line := strings.to_string(current_line)
 			if line != "" {
-				process_line(&line, &temp_songs)
+				process_line(library, &line, &temp_songs)
 			}
 			strings.builder_reset(&current_line)
 		} else {
@@ -123,7 +149,7 @@ scan_all_files :: proc(
 	// Process last line if it wasn't terminated with newline
 	if strings.builder_len(current_line) > 0 {
 		line := strings.to_string(current_line)
-		process_line(&line, &temp_songs)
+		process_line(library, &line, &temp_songs)
 	}
 
 	strings.builder_destroy(&current_line)
@@ -131,7 +157,7 @@ scan_all_files :: proc(
 	// Bulk transfer to shared collection
 	sync.mutex_lock(all_songs_mutex)
 	// reserve(all_songs, len(temp_songs))
-	append(all_songs, ..temp_songs[:])
+	append(&library.songs, ..temp_songs[:])
 	all_files_scan_done^ = true
 	sync.mutex_unlock(all_songs_mutex)
 
@@ -147,7 +173,7 @@ time_proc :: proc(message: string, run: proc()) {
 	fmt.printfln("%s %v", message, sw._accumulation)
 }
 
-process_line :: proc(line: ^string, songs: ^[dynamic]Song) {
+process_line :: proc(library: ^MediaLibrary, line: ^string, songs: ^[dynamic]Song) {
 	// Skip empty lines
 	if strings.trim_space(line^) == "" do return
 
@@ -191,22 +217,23 @@ process_line :: proc(line: ^string, songs: ^[dynamic]Song) {
 	new_path, was_alloc := strings.replace_all(path, "/", "\\")
 	// fmt.printfln("New %s",  windows.utf8_to_wstring(new_path))
 	// fmt.println("Os", file_info.fullpath)
+
 	item := Song {
 		// info           = file_info,
-		name           = strings.clone_to_cstring(parts[1]),
+		name           = strings.clone_to_cstring(parts[1], library.arena_allocator),
 		// fullpath       = strings.clone_to_cstring(file_info.fullpath),
-		fullpath       = strings.clone_to_cstring(new_path),
+		fullpath       = strings.clone_to_cstring(new_path, library.arena_allocator),
 		lowercase_name = strings.to_lower(parts[1]),
 		dir            = new_path,
 		valid_metadata = false,
 	}
 
 	if count >= 7 {
-		item.metadata.title = strings.clone_to_cstring(parts[2])
-		item.metadata.artist = strings.clone_to_cstring(parts[3])
-		item.metadata.album = strings.clone_to_cstring(parts[4])
-		item.metadata.year = strings.clone_to_cstring(parts[5])
-		item.metadata.genre = strings.clone_to_cstring(parts[6])
+		item.metadata.title = strings.clone_to_cstring(parts[2], library.arena_allocator)
+		item.metadata.artist = strings.clone_to_cstring(parts[3], library.arena_allocator)
+		item.metadata.album = strings.clone_to_cstring(parts[4], library.arena_allocator)
+		item.metadata.year = strings.clone_to_cstring(parts[5], library.arena_allocator)
+		item.metadata.genre = strings.clone_to_cstring(parts[6], library.arena_allocator)
 	}
 
 	append(songs, item)
@@ -372,8 +399,8 @@ scan_zpl_playlist :: proc(path: string) -> (playlist: Playlist, ok: bool) {
 }
 
 scan_all_playlists :: proc(
+	library: ^MediaLibrary,
 	all_playlists_mutex: ^sync.Mutex,
-	all_playlists: ^[dynamic]Playlist,
 	all_playlists_scan_done: ^bool,
 ) {
 	stop_watch: time.Stopwatch
@@ -381,13 +408,13 @@ scan_all_playlists :: proc(
 	folder_path := "C:/Users/St.Klue/Music/Playlists"
 	dir_handle, err := os.open(folder_path)
 	if err != os.ERROR_NONE {
-		fmt.println("Failed to open directory: ", err)
+		log.error("Failed to open directory: ", err)
 	}
 	defer os.close(dir_handle)
 	// Get all files in the directory
 	files, read_err := os.read_dir(dir_handle, -1)
 	if read_err != nil {
-		fmt.println("Failed to read directory:", folder_path)
+		log.error("Failed to read directory:", folder_path)
 	}
 	sync.mutex_lock(all_playlists_mutex)
 	for file in files {
@@ -395,9 +422,7 @@ scan_all_playlists :: proc(
 			// full_path := path.join(folder_path, file.name)
 			playlist, ok := scan_zpl_playlist(file.fullpath)
 			if ok {
-				// sync.mutex_lock(all_playlists_mutex)
-				append(all_playlists, playlist)
-				// sync.mutex_unlock(all_playlists_mutex)
+				append(&library.playlists, playlist)
 			}
 		}
 	}
@@ -406,7 +431,7 @@ scan_all_playlists :: proc(
 	time.stopwatch_stop(&stop_watch)
 	fmt.printfln(
 		"Playlists (.zpl) %d/%d scanned in %v",
-		len(all_playlists),
+		len(library.playlists),
 		len(files),
 		stop_watch._accumulation,
 	)
@@ -428,23 +453,19 @@ scan_playlist_entries :: proc(
 	clear(playlist_entries)
 	sync.mutex_unlock(playlist_mutex)
 
-	// fmt.println("Playlist length: ", playlist.entries[0])
+	found_entries: int
 	for &p, i in playlist.entries {
-		fmt.println(p.fullpath)
 		dir_path := p.fullpath
-		// // path := "C:/Users/St.Klue/Music/Songs/Running [Dyalla Flip from 4 Producers 1 Sample].mp3"
-		// path := "C:\\Users\\St.Klue\\Music\\Artists\\August Alsina\\August Alsina - Forever and a Day [Official Audio] 2019.mp3"
 		dir_handle, err := os.open(strings.clone_from_cstring(dir_path))
-		// dir_handle, err := os.open(path)
 		if err != nil {
-			fmt.eprintln("Failed to open directory: ", dir_path, err)
+			log.warn("Failed to open directory: ", dir_path, err)
 			continue
 		}
 
 		defer os.close(dir_handle)
 		file_info, fstat_err := os.fstat(dir_handle)
 		if fstat_err != nil {
-			fmt.println("Failed to read file: ", fstat_err)
+			log.warn("Failed to read file: ", fstat_err)
 			continue
 		}
 		// entry := Song {
@@ -454,22 +475,17 @@ scan_playlist_entries :: proc(
 		// 	lowercase_name = strings.to_lower(file_info.name),
 		// }
 		p.info = file_info
-		// p.metadata.title = len(p.fullpath) < 20 ? p.fullpath: p.fullpath[:20]
 		sync.mutex_lock(playlist_mutex)
 		append(playlist_entries, p)
-		// // fmt.printf("loaded %d file from playlist of %d songs\n", len(shared), len(playlist.entries))
 		sync.mutex_unlock(playlist_mutex)
-		// get lock for playlists
+		found_entries += 1
 	}
-
-	sync.mutex_lock(playlist_mutex)
-	shrink(playlist_entries)
-	sync.mutex_unlock(playlist_mutex)
 
 	time.stopwatch_stop(&stop_watch)
 	fmt.printfln(
-		"Scanning %d playlist entries took %v",
+		"Scanned %d playlist entries. Found %d.  Took %v",
 		len(playlist.entries),
+		found_entries,
 		stop_watch._accumulation,
 	)
 }

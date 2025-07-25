@@ -5,7 +5,7 @@ import "core:log"
 import im "../../odin-imgui"
 import "../../odin-imgui/imgui_impl_glfw"
 import "../../odin-imgui/imgui_impl_opengl3"
-import common "../common"
+import media "../media"
 import "core:fmt"
 import "core:os"
 import "core:slice"
@@ -13,7 +13,6 @@ import "core:strconv"
 import "core:strings"
 import image "vendor:stb/image"
 
-// import audio "audio_state"
 import app "../app"
 import audio "../audio_state"
 import "base:runtime"
@@ -25,7 +24,7 @@ import "core:sync"
 import "core:thread"
 
 text :: proc(s: string) -> cstring {
-	return strings.clone_to_cstring(s)
+	return strings.clone_to_cstring(s, app.g_app.arena_allocator)
 }
 
 Vec4 :: [4]f32
@@ -39,12 +38,11 @@ color_vec4_to_u32 :: proc(c: Vec4) -> u32 {
 
 
 top_left_panel :: proc(
-	all_songs: ^[dynamic]common.Song,
-	playlists: ^[dynamic]common.Playlist,
+	playlists: ^[dynamic]media.Playlist, // all_songs: ^[dynamic]media.Song,
 	playlists_mutex: ^sync.Mutex,
 	all_playlists_scan_done: bool,
 	app_state: ^app.AppState,
-	search_results: ^[dynamic]common.SearchItem,
+	search_results: ^[dynamic]media.SearchItem,
 	root: string,
 	audio_state: ^audio.AudioState,
 	query_buffer: ^[256]u8,
@@ -61,10 +59,10 @@ top_left_panel :: proc(
 		bar_size := im.Vec2{size.x - offset_x, 40} // includes padding space
 		draw_search_bar("##search-bar", query_buffer, bar_size)
 		if im.IsItemEdited() {
-			thread.create_and_start_with_poly_data4(
+			app.g_app.library.search_thread = thread.create_and_start_with_poly_data4(
 				app.g_app,
 				fmt.tprint(cast(cstring)(&query_buffer[0])),
-				all_songs,
+				&app_state.library.songs,
 				search_results,
 				app.search_song,
 			)
@@ -74,7 +72,6 @@ top_left_panel :: proc(
 		im.Dummy({0, 20}) // space below search bar
 
 		child_height := size.y - 70 // subtract fixed search + spacing
-		// im.PushStyleColor(im.Col.ChildBg, color_vec4_to_u32({0.10, 0.12, 0.18, 0.25})) // playlist scroll bg
 		if im.BeginChild(
 			"##playlist-scroll",
 			{size.x, child_height},
@@ -87,18 +84,9 @@ top_left_panel :: proc(
 			if draw_custom_button("All Songs", {}, {size.x - offset_x, 30}, {10, 10}) {
 				using app
 				clear(&g_app.play_queue)
-				append(&g_app.play_queue, ..all_songs[:])
+				append(&g_app.play_queue, ..g_app.library.songs[:])
 				g_app.ui_view = .All_Songs
 				g_app.last_view = .All_Songs
-				// if app.g_app.playlist_index != -1 {
-				// 	app.g_app.playlist_index = -1
-				// 	app.g_app.current_view_index = 0
-				// 	app.g_app.playlist_item_clicked = false
-				// 	// sync.mutex_lock(&app.g_app.mutex)
-				// 	// clear(&app.g_app.all_songs)
-				// 	// sync.mutex_unlock(&app.g_app.mutex)
-				// 	thread.create_and_start_with_poly_data(root, app.scan_all_files)
-				// }
 			}
 
 			im.Separator()
@@ -127,17 +115,20 @@ top_left_panel :: proc(
 					) {
 						app.g_app.playlist_index = i
 						app.g_app.clicked_playlist = &playlists[i]
-						// app.g_app.show_clicked_playlist = true
 						app.g_app.ui_view = .Playlist
 						app.g_app.last_view = .Playlist
-
-						thread.create_and_start_with_poly_data4(
-							&app.g_app.mutex,
-							app.g_app.clicked_playlist,
-							app.g_app.clicked_playlist_entries,
-							app.g_app.scan_playlist_done,
-							common.scan_playlist_entries,
-						)
+						// destroy thread first if it was already created
+						if app.g_app.library.playlist_thread != nil {
+							thread.destroy(app.g_app.library.playlist_thread)
+						}
+						app.g_app.library.playlist_thread =
+							thread.create_and_start_with_poly_data4(
+								&app.g_app.mutex,
+								app.g_app.clicked_playlist,
+								&app.g_app.clicked_playlist_entries,
+								app.g_app.scan_playlist_done,
+								media.scan_playlist_entries,
+							)
 					}
 				}
 			} else {
@@ -145,13 +136,6 @@ top_left_panel :: proc(
 				if len(search_results) > 0 && len(search_results) < 100 {
 					for search_result, i in search_results {
 						currently_selected := app.g_app.search_result_index == i
-						// switch &file_type in search_result.files {
-						// 	case common.Song:
-						// 		clear(app_state.clicked_search_results_entries)
-						// 		append(app_state.clicked_search_results_entries, file_type)
-						// audio.update_path(audio_state, file_type.fullpath)
-						// audio.create_audio_play_thread(audio_state)
-
 						if draw_item_selectable(
 							search_result.label,
 							currently_selected,
@@ -159,50 +143,33 @@ top_left_panel :: proc(
 							{size.x - offset_x, 30},
 							{10, 10},
 						) {
-							// app_state.show_search_results = true
 							app.g_app.ui_view = .Search
 							app.g_app.last_view = .Search
 							switch search_result.kind {
 							case .Title:
 								#partial switch file_type in search_result.files {
-								case common.Song:
-									clear(app_state.clicked_search_results_entries)
-									append(app_state.clicked_search_results_entries, file_type)
+								case media.Song:
+									clear(&app_state.clicked_search_results_entries)
+									append(&app_state.clicked_search_results_entries, file_type)
 								}
 							case .Album:
-								album := new(common.Songs)
-								app.search_album(all_songs, search_result.file_name, album)
-								clear(app.g_app.clicked_search_results_entries)
-								app.g_app.clicked_search_results_entries = album
+								album := new(media.Songs)
+								app.search_album(
+									&app.g_app.library.songs,
+									search_result.file_name,
+									album,
+								)
+								clear(&app.g_app.clicked_search_results_entries)
+								app.g_app.clicked_search_results_entries = album^
 							case .Artist:
-								artist := new(common.Songs)
-								app.search_artist(all_songs, search_result.file_name, artist)
-								clear(app.g_app.clicked_search_results_entries)
-								app.g_app.clicked_search_results_entries = artist
-							// #partial switch &file_type in search_result.files {
-							// case [dynamic]common.Song:
-							// 	clear(app_state.clicked_search_results_entries)
-							// 	app_state.clicked_search_results_entries = &file_type
-							// clear(app_state.clicked_search_results_entries)
-							// append(
-							// 	app_state.clicked_search_results_entries,
-							// 	..file_type[:],
-							// )
-							// }
+								artist := new(media.Songs)
+								app.search_artist(
+									&app.g_app.library.songs,
+									search_result.file_name,
+									artist,
+								)
+								clear(&app.g_app.clicked_search_results_entries)
 							}
-							// if search_result.kind == .Title {
-							// 	switch &file_type in search_result.files {
-							// 	case common.Song:
-							// 		clear(app_state.clicked_search_results_entries)
-							// 		append(app_state.clicked_search_results_entries, file_type)
-							// 		// audio.update_path(audio_state, file_type.fullpath)
-							// 		// audio.create_audio_play_thread(audio_state)
-
-							// 	case [dynamic]common.Song:
-							// 		app_state.clicked_search_results_entries = &file_type
-							// 	}
-
-							// }
 						}
 
 					}
@@ -217,7 +184,7 @@ top_left_panel :: proc(
 
 }
 top_right_panel :: proc(
-	all_songs: ^[dynamic]common.Song,
+	all_songs: ^[dynamic]media.Song,
 	bolt_font: ^im.Font,
 	audio_state: ^audio.AudioState,
 	window_position: im.Vec2,

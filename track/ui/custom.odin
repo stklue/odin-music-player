@@ -3,7 +3,7 @@ package ui
 
 
 import app "../app"
-import common "../common"
+import media "../media"
 import "core:fmt"
 import "core:os"
 import "core:strconv"
@@ -70,7 +70,7 @@ draw_item_selectable :: proc(
 
 // draw music information bar
 draw_information_bar :: proc(
-	file_entry: common.Song,
+	file_entry: media.Song,
 	selected: bool,
 	flags: im.SelectableFlags,
 	size: im.Vec2,
@@ -368,7 +368,7 @@ draw_search_results_clicked :: proc(audio_state: ^audio.AudioState, size: [2]f32
 			} else {
 				fmt.printf("[TRACK::App] Playing: %s\n", v.name)
 				clear(&g_app.play_queue)
-				append(&g_app.play_queue, ..(app.g_app.clicked_search_results_entries^)[:])
+				append(&g_app.play_queue, ..(app.g_app.clicked_search_results_entries)[:])
 				g_app.play_queue_item_playing = v
 				g_app.playlist_item_clicked = true
 				g_app.play_queue_index = i
@@ -382,7 +382,7 @@ draw_search_results_clicked :: proc(audio_state: ^audio.AudioState, size: [2]f32
 }
 
 draw_all_songs :: proc(
-	all_songs: ^[dynamic]common.Song,
+	all_songs: ^[dynamic]media.Song,
 	audio_state: ^audio.AudioState,
 	size: [2]f32,
 ) {
@@ -546,6 +546,7 @@ draw_audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	center := im.Vec2{handle_x, p0.y + height / 2}
 	im.DrawList_AddCircleFilled(draw_list, center, handle_radius, col_handle)
 
+	// label memory should be freed
 	label := strings.clone_to_cstring(
 		fmt.tprintf(
 			"%.0f:%.0f / %.0f:%.0f",
@@ -554,6 +555,7 @@ draw_audio_progress_bar_and_volume_bar :: proc(audio_state: ^audio.AudioState) {
 			math.floor(audio_state.duration / 60),
 			math.mod(audio_state.duration, 60),
 		),
+		app.g_app.arena_allocator,
 	)
 	text_size := im.CalcTextSize(label)
 	text_pos := im.Vec2{(p0.x + p1.x - text_size.x) / 2, p1.y + 4}
