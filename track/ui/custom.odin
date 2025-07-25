@@ -466,14 +466,20 @@ draw_custom_header :: proc(title: cstring, width: f32) {
 	// Icon or indicator inside button (simple chevron or circle)
 	center := btn_pos + btn_size / 2
 	radius: f32 = 6.0
-	if app.g_app.show_visualizer {
+	#partial switch app.g_app.ui_view {
+	case .Visualizer:
 		im.DrawList_AddCircleFilled(draw_list, center, radius, icon_color)
-	} else {
+	case:
 		im.DrawList_AddCircle(draw_list, center, radius, icon_color, 16, 1.5)
+
 	}
 
 	if im.IsItemClicked() {
-		app.g_app.show_visualizer = !app.g_app.show_visualizer
+		if app.g_app.ui_view != .Visualizer {
+			app.g_app.ui_view = .Visualizer
+		} else {
+			app.g_app.ui_view = app.g_app.last_view
+		}
 	}
 }
 

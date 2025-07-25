@@ -218,7 +218,6 @@ top_left_panel :: proc(
 }
 top_right_panel :: proc(
 	all_songs: ^[dynamic]common.Song,
-	app_state: ^app.AppState,
 	bolt_font: ^im.Font,
 	audio_state: ^audio.AudioState,
 	window_position: im.Vec2,
@@ -240,14 +239,13 @@ top_right_panel :: proc(
 		using app
 		title: cstring
 
-		// app_state.playlist_index == -1 ? "All Songs" : 
 		#partial switch g_app.ui_view {
 		case .All_Songs:
 			title = "All Songs"
 		case .Search:
 			title = "Search results"
 		case .Playlist:
-			title = text(app_state.clicked_playlist.meta.title)
+			title = text(g_app.clicked_playlist.meta.title)
 		}
 
 		im.SetCursorPos(im.Vec2{0, 20})
@@ -292,7 +290,6 @@ top_right_panel :: proc(
 }
 bottom_panel :: proc(
 	app_state: ^app.AppState,
-	display_songs: ^[dynamic]common.Song,
 	audio_state: ^audio.AudioState,
 	top_h, screen_w, third_h: f32,
 ) {

@@ -214,14 +214,6 @@ main :: proc() {
 			}
 		}
 
-		// 		if (ImGui::IsKeyPressed(ImGuiKey_F1) && ImGui::GetIO().KeyCtrl) {
-		//       // Ctrl + F1 pressed
-		//   }
-
-		// if im.IsKeyPressed(.F) && im.GetIO().KeyCtrl {
-		// 	fmt.println("just press ctrl f")
-		// 	// ui.draw_search_bar2(&song_query_buffer)
-		// }
 		// ==================== Top Left ====================
 		im.SetNextWindowPos(im.Vec2{0, 0})
 		im.SetNextWindowSize(im.Vec2{third_w, top_h})
@@ -264,79 +256,30 @@ main :: proc() {
 				left_panel_window_size,
 			)
 		}
-		// else {
-		// 	// im.SetNextWindowSize(left_panel_window_size)
-		// 	style := im.GetStyle()
-		// 	style.FramePadding = 16
-		// 	if im.Begin(
-		// 		"##right-panel-header",
-		// 		nil,
-		// 		{.NoResize, .NoCollapse, .NoTitleBar, .NoBackground},
-		// 	) {
-		// 		im.Text("Loading Playlists...")
-		// 	}
-		// 	im.End()
-		// }
-		// im.SetNextWindowPos(im.Vec2{0, 0})
-		// im.SetNextWindowSize(im.Vec2{third_w, top_h})
-		// if im.Begin("Visualizer", nil, im.WindowFlags_NoDecoration) {
-		// 	vis.render_audio_visualizer(
-		// 		audio_state,
-		// 		im.GetWindowPos() + im.GetWindowContentRegionMin(),
-		// 		im.GetContentRegionAvail(),
-		// 	)
-		// }
-		// im.End()
+
 		im.PopStyleColor(4)
 
 		// ==================== Top Right ==================== 
-		display_songs :=
-			!app.g_app.show_clicked_playlist ? app.g_app.all_songs : app.g_app.clicked_playlist.entries
 		right_panel_window_position := im.Vec2{third_w, 0}
 		right_panel_window_size := im.Vec2{right_w, top_h}
 		if all_files_scan_done {
 			ui.top_right_panel(
 				all_songs,
-				app.g_app,
 				bold_header_font,
 				audio_state,
 				right_panel_window_position,
 				right_panel_window_size,
 			)
 		}
-		// else {
-		// 	im.SetNextWindowPos(right_panel_window_position)
-		// 	// im.SetNextWindowSize(right_panel_window_size)
-		// 	style := im.GetStyle()
-		// 	style.FramePadding = 16
 
-		// 	if im.Begin(
-		// 		"##right-panel-header",
-		// 		nil,
-		// 		{.NoResize, .NoCollapse, .NoTitleBar, .NoBackground},
-		// 	) {
-		// 		im.Text("Loading...")
-		// 	}
-		// 	im.End()
-		// }
 		// ==================== Bottom ====================
-		different_playlist_songs :=
-			app.g_app.playlist_item_clicked ? display_songs : app.g_app.all_songs
-
 		ui.bottom_panel(
 			app.g_app,
-			&different_playlist_songs,
 			audio_state,
 			top_h,
 			screen_w,
 			third_h,
 		)
-
-		// if app.g_app.show_search_bar {
-		// 	if ui.draw_search_bar2("##search-bar-2", &song_query_buffer, {10, 10}) {
-
-		// 	}
-		// }
 
 		im.Render()
 		display_w, display_h := glfw.GetFramebufferSize(window)
@@ -345,15 +288,8 @@ main :: proc() {
 		gl.Clear(gl.COLOR_BUFFER_BIT)
 		imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
 
-		when !DISABLE_DOCKING {
-			backup_current_window := glfw.GetCurrentContext()
-			im.UpdatePlatformWindows()
-			im.RenderPlatformWindowsDefault()
-			glfw.MakeContextCurrent(backup_current_window)
-		}
-
 		glfw.SwapBuffers(window)
-		free_all(context.temp_allocator)
+		free_all(context.temp_allocator) // free after every frame
 	}
 
 

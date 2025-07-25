@@ -16,7 +16,6 @@ import "core:time"
 
 AppState :: struct {
 	mutex:                          sync.Mutex,
-	// current_song:
 	is_searching:                   bool,
 	current_view_index:             int,
 	// playlist
@@ -33,9 +32,6 @@ AppState :: struct {
 	taglib_total_duration:          time.Duration,
 	taglib_file_count:              int,
 	all_files_scanned_donr:         bool,
-	show_search_results:            bool,
-	show_visualizer:                bool,
-	show_clicked_playlist:          bool,
 	clicked_playlist:               ^common.Playlist,
 	scan_playlist_done:             ^bool,
 	clicked_playlist_entries:       ^common.Songs,
