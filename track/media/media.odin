@@ -435,8 +435,6 @@ scan_all_playlists :: proc(
 		len(files),
 		stop_watch._accumulation,
 	)
-	// fmt.println(all_playlists[0])
-
 }
 
 

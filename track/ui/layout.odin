@@ -59,6 +59,9 @@ top_left_panel :: proc(
 		bar_size := im.Vec2{size.x - offset_x, 40} // includes padding space
 		draw_search_bar("##search-bar", query_buffer, bar_size)
 		if im.IsItemEdited() {
+			if app.g_app.library.search_thread  != nil {
+				thread.destroy(app.g_app.library.search_thread)
+			}
 			app.g_app.library.search_thread = thread.create_and_start_with_poly_data4(
 				app.g_app,
 				fmt.tprint(cast(cstring)(&query_buffer[0])),

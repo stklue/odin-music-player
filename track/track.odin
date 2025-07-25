@@ -323,8 +323,13 @@ main :: proc() {
 		panic("Playlists thread did not manage to finish")
 	}
 
-	// thread.destroy(app.g_app.library.search_thread)
-	thread.destroy(app.g_app.library.playlist_thread)
+	// these two threads may not execute and will be nil
+	if app.g_app.library.search_thread != nil {
+		thread.destroy(app.g_app.library.search_thread)
+	}
+	if app.g_app.library.playlist_thread != nil {
+		thread.destroy(app.g_app.library.playlist_thread)
+	}
 
 	{
 

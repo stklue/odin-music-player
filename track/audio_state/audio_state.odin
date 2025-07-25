@@ -65,7 +65,11 @@ destroy_audio_state :: proc(state: ^AudioState) {
 		ma.decoder_uninit(state.decoder)
 		// free(state.decoder)
 	}
-	thread.destroy(state.thread)
+	// May not always run. User can just open the app and close it. So check nullity 
+	if state.thread != nil {
+		thread.destroy(state.thread)
+	}
+	log.info("Destroyed audio play thread")
 	free(state)
 	log.info("[AUDIO_STATE] Destroyed audio state")
 }
@@ -139,11 +143,7 @@ play_audio :: proc(state: ^AudioState) {
 	ma.decoder_get_available_frames(decoder, &frame_count)
 	state.duration = auto_cast frame_count / auto_cast decoder.outputSampleRate
 
-	log.infof(
-		"Duration: %.2f seconds (%.1f minutes)\n",
-		state.duration,
-		state.duration / 60,
-	)
+	log.infof("Duration: %.2f seconds (%.1f minutes)\n", state.duration, state.duration / 60)
 
 	// Set up device config
 	device_config := ma.device_config_init(.playback)
