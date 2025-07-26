@@ -366,7 +366,7 @@ draw_search_results_clicked :: proc(audio_state: ^audio.AudioState, size: [2]f32
 			   i < len(g_app.play_queue) &&
 			   g_app.play_queue_item_playing.name == g_app.play_queue[i].name {
 			} else {
-				fmt.printf("[TRACK::App] Playing: %s\n", v.name)
+				fmt.printf("[TRACK::Search result] Playing: %s\n", v.name)
 				clear(&g_app.play_queue)
 				append(&g_app.play_queue, ..(app.g_app.clicked_search_results_entries)[:])
 				g_app.play_queue_item_playing = v

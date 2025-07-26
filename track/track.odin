@@ -326,13 +326,14 @@ main :: proc() {
 	// these two threads may not execute and will be nil
 	if app.g_app.library.search_thread != nil {
 		thread.destroy(app.g_app.library.search_thread)
+		log.info("Killed search thread")
 	}
 	if app.g_app.library.playlist_thread != nil {
 		thread.destroy(app.g_app.library.playlist_thread)
+		log.info("Killed playlist thread")
 	}
 
 	{
-
 		delete_dynamic_array(app.g_app.clicked_playlist_entries)
 		delete_dynamic_array(app.g_app.clicked_search_results_entries)
 		delete_dynamic_array(app.g_app.play_queue)

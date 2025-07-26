@@ -106,7 +106,6 @@ top_left_panel :: proc(
 
 			// draw playlists
 			if empty {
-				// for v, i in app.g_app.playlists {
 				for v, i in playlists {
 					currently_selected := app.g_app.playlist_index == i
 					if draw_item_selectable(
@@ -150,38 +149,34 @@ top_left_panel :: proc(
 							app.g_app.last_view = .Search
 							switch search_result.kind {
 							case .Title:
-								#partial switch file_type in search_result.files {
-								case media.Song:
-									clear(&app_state.clicked_search_results_entries)
-									append(&app_state.clicked_search_results_entries, file_type)
-								}
+								clear(&app_state.clicked_search_results_entries)
+								app.search_one_song(
+									&app.g_app.library.songs,
+									search_result.file_name,
+									&app.g_app.clicked_search_results_entries,
+								)
 							case .Album:
-								album := new(media.Songs)
+								clear(&app.g_app.clicked_search_results_entries)
 								app.search_album(
 									&app.g_app.library.songs,
 									search_result.file_name,
-									album,
+									&app.g_app.clicked_search_results_entries,
 								)
-								clear(&app.g_app.clicked_search_results_entries)
-								app.g_app.clicked_search_results_entries = album^
 							case .Artist:
-								artist := new(media.Songs)
+								clear(&app.g_app.clicked_search_results_entries)
 								app.search_artist(
 									&app.g_app.library.songs,
 									search_result.file_name,
-									artist,
+									&app.g_app.clicked_search_results_entries,
 								)
-								clear(&app.g_app.clicked_search_results_entries)
 							}
 						}
 
 					}
 				}
 			}
-			// sync.mutex_unlock(&app.g_app.mutex)
 		}
 		im.EndChild()
-		// im.PopStyleColor()
 	}
 	im.End()
 

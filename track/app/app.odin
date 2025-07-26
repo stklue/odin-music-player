@@ -42,7 +42,6 @@ AppState :: struct {
 	play_queue_index:               int,
 	ui_view:                        UI_View,
 	last_view:                      UI_View, // when switching to the visualizer and back
-	
 	library:                        media.MediaLibrary,
 	arena:                          mem.Arena, // for app cstrings allocations
 	arena_allocator:                mem.Allocator,
@@ -100,7 +99,6 @@ search_song :: proc(
 	found_artists := map[string]bool{}
 
 	// Song matches are kept separate
-	song_matches: media.Songs
 	for song in songs {
 		title := strings.to_lower(fmt.tprint(song.metadata.title))
 		album := strings.to_lower(fmt.tprint(song.metadata.album))
@@ -113,9 +111,8 @@ search_song :: proc(
 			item := media.SearchItem {
 				kind       = .Album,
 				label      = strings.clone_to_cstring(
-					fmt.tprintf("%s (album)", song.metadata.album),
+					fmt.tprintf("(album) %s", song.metadata.album),
 				),
-				files_type = .List,
 				file_name  = song.metadata.album,
 			}
 
@@ -128,9 +125,8 @@ search_song :: proc(
 			item := media.SearchItem {
 				kind       = .Artist,
 				label      = strings.clone_to_cstring(
-					fmt.tprintf("%s (artist)", song.metadata.artist),
+					fmt.tprintf("(artist) %s", song.metadata.artist),
 				),
-				files_type = .List,
 				file_name  = song.metadata.artist,
 			}
 			append(search_results, item)
@@ -138,29 +134,36 @@ search_song :: proc(
 
 		// Check for title or filename match
 		if strings.contains(title, query) || strings.contains(filename, query) {
-			append(&song_matches, song)
-		}
-	}
-
-	// Add matching songs at the end
-	if len(song_matches) > 0 {
-		for match in song_matches {
 			item := media.SearchItem {
 				kind       = .Title,
 				label      = strings.clone_to_cstring(
-					fmt.tprintf("%s (song)", match.metadata.title),
+					fmt.tprintf(
+						"(song) %s",
+						song.metadata.title,
+					),
 				),
-				files      = match,
-				files_type = .Single,
+				file_name  = song.metadata.title,
 			}
 			append(search_results, item)
 		}
 	}
 
-	// fmt.println("Search output: ", len(search_results))
 	state.is_searching = true
 }
 
+
+search_one_song :: proc(all_songs: ^media.Songs, find_song: cstring, song_display: ^media.Songs) {
+	for song in all_songs {
+		if strings.contains(fmt.tprint(song.metadata.title), fmt.tprint(find_song)) {
+			append(song_display, song)
+			return
+		}
+		if strings.contains(fmt.tprint(song.name), fmt.tprint(find_song)) {
+			append(song_display, song)
+			return
+		}
+	}
+}
 
 search_album :: proc(all_songs: ^media.Songs, album_name: cstring, album: ^media.Songs) {
 	for song in all_songs {

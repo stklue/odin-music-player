@@ -70,10 +70,6 @@ SongType :: enum {
 	Artist,
 }
 
-ListOrSingle :: union {
-	[dynamic]Song,
-	Song,
-}
 
 FilesType :: enum {
 	List,
@@ -84,7 +80,6 @@ FilesType :: enum {
 SearchItem :: struct {
 	kind:       SongType,
 	label:      cstring, // What to display in UI: e.g. "The Beatles (artist)"
-	files:      ListOrSingle, // Associated files (empty for artist/album)
 	files_type: FilesType,
 	file_name:  cstring, // "The Beatles"
 }
