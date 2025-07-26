@@ -12,10 +12,18 @@ Bar::struct {
 }
 
 main::proc() {
-    x: [dynamic]Foo
-    append(&x, Foo{})
-    fmt.printfln("%p, %d, %v", &x,&x, x)
-    y: [dynamic]Bar
-    append(&y, Bar{})
-    fmt.println(&y, y)
+    // x: [dynamic]Foo
+    // append(&x, Foo{})
+    // fmt.printfln("%p, %d, %v", &x,&x, x)
+    // y: [dynamic]Bar
+    // append(&y, Bar{})
+    // fmt.println(&y, y)
+
+
+    defer {
+        fmt.println("foo")
+    }
+    defer {
+        fmt.println("bar")
+    }
 }
