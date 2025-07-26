@@ -146,6 +146,7 @@ top_left_panel :: proc(
 						) {
 							app.g_app.ui_view = .Search
 							app.g_app.last_view = .Search
+							app.g_app.search_query =  search_result.file_name
 							switch search_result.kind {
 							case .Title:
 								clear(&app_state.clicked_search_results_entries)
@@ -207,7 +208,7 @@ top_right_panel :: proc(
 		case .All_Songs:
 			title = "All Songs"
 		case .Search:
-			title = "Search results"
+			title = strings.clone_to_cstring(fmt.tprint("Search results for", g_app.search_query))
 		case .Playlist:
 			title = text(g_app.library.playlists[g_app.playlist_index].meta.title)
 		}

@@ -40,6 +40,8 @@ AppState :: struct {
 	library:                        media.MediaLibrary,
 	arena:                          mem.Arena, // for app cstrings allocations
 	arena_allocator:                mem.Allocator,
+
+	search_query: 					cstring
 }
 
 
