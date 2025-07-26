@@ -342,8 +342,6 @@ draw_playlist_items :: proc(audio_state: ^audio.AudioState, size: [2]f32) {
 			fmt.printf("[TRACK::App] Playing: %s\n", v.name)
 			clear(&app.g_app.play_queue)
 			append(&app.g_app.play_queue, ..app.g_app.clicked_playlist_entries[:])
-			app.g_app.play_queue_item_playing = v
-			app.g_app.playlist_item_clicked = true
 			app.g_app.play_queue_index = i
 			audio.update_path(audio_state, v.fullpath)
 			audio.create_audio_play_thread(audio_state)
@@ -364,13 +362,11 @@ draw_search_results_clicked :: proc(audio_state: ^audio.AudioState, size: [2]f32
 			// if the song is alread playing do not start over
 			if len(g_app.play_queue) > 0 &&
 			   i < len(g_app.play_queue) &&
-			   g_app.play_queue_item_playing.name == g_app.play_queue[i].name {
+			   g_app.play_queue[g_app.play_queue_index].name == g_app.play_queue[i].name {
 			} else {
 				fmt.printf("[TRACK::Search result] Playing: %s\n", v.name)
 				clear(&g_app.play_queue)
 				append(&g_app.play_queue, ..(app.g_app.clicked_search_results_entries)[:])
-				g_app.play_queue_item_playing = v
-				g_app.playlist_item_clicked = true
 				g_app.play_queue_index = i
 				audio.update_path(audio_state, v.fullpath)
 				audio.create_audio_play_thread(audio_state)
@@ -396,18 +392,10 @@ draw_all_songs :: proc(
 		if draw_information_bar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
 			fmt.println("[TRACK::App] Started new play queue")
 			fmt.printf("[TRACK::App] Playing: %s\n", v.name)
-			// copy_slice(g_app.play_queue[:], all_songs[:])
 			clear(&g_app.play_queue)
 			append(&g_app.play_queue, ..all_songs[:])
-			// fmt.printf("[TRACK::App] items in playqueue: %d\n", len(g_app.play_queue))
 
 			g_app.play_queue_index = i
-
-			g_app.all_songs_item_playling = v
-			g_app.play_queue_item_playing = v
-			g_app.playlist_item_clicked = true
-			g_app.play_queue_index = i
-
 
 			audio.update_path(audio_state, v.fullpath)
 			audio.create_audio_play_thread(audio_state)

@@ -339,12 +339,11 @@ main :: proc() {
 		delete_dynamic_array(app.g_app.play_queue)
 		delete(app.g_app.arena.data)
 		log.info("Deleting dynamic arrays")
-	}
-	media.delete_library(&app.g_app.library)
-	{
+		media.delete_library(&app.g_app.library)
 		free(app.g_app)
 		log.info("Freed global app")
 	}
+	
 	audio.destroy_audio_state(audio_state)
 	if reset_tracking_allocator(&tracking_allocator) {
 		libc.getchar()

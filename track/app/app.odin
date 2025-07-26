@@ -4,7 +4,6 @@ import "core:flags"
 import "core:mem"
 import "core:slice"
 import "core:sys/windows"
-// import fe "../file"
 import taglib "../../taglib-odin"
 import media "../media"
 import "core:fmt"
@@ -19,29 +18,25 @@ AppState :: struct {
 	mutex:                          sync.Mutex,
 	is_searching:                   bool,
 	current_view_index:             int,
-	// playlist
-	playlists:                      [dynamic]media.Playlist,
-	playlist_index:                 int,
+	playlist_index:                 int, // index into library playlists
 	playlist_item_index:            int,
-	playlist_item_playling:         ^media.Song,
-	all_songs_item_playling:        media.Song,
 	search_result_index:            int,
 	all_songs:                      media.Songs,
-	// clicked_playlist:           media.Songs,
-	playlist_item_clicked:          bool,
 	total_files:                    int,
 	taglib_total_duration:          time.Duration,
 	taglib_file_count:              int,
-	all_files_scanned_donr:         bool,
-	clicked_playlist:               ^media.Playlist,
+	all_files_scanned_done:         bool,
 	scan_playlist_done:             ^bool,
+	
 	clicked_playlist_entries:       media.Songs,
 	clicked_search_results_entries: media.Songs,
+	
 	play_queue:                     media.Songs,
-	play_queue_item_playing:        media.Song,
 	play_queue_index:               int,
+	
 	ui_view:                        UI_View,
 	last_view:                      UI_View, // when switching to the visualizer and back
+	
 	library:                        media.MediaLibrary,
 	arena:                          mem.Arena, // for app cstrings allocations
 	arena_allocator:                mem.Allocator,
@@ -71,19 +66,9 @@ init_app :: proc() -> ^AppState {
 	media.init_library(&state.library)
 	return state
 }
+// cleanup code in track.odin
+// could not get it to work through defer cleanup_app()
 
-delete_app :: proc() {
-	fmt.println("[APP_DELETE_APP] Deleting App memory...")
-	// delete_dynamic_array(g_app.clicked_playlist_entries)
-	delete_dynamic_array(g_app.clicked_search_results_entries)
-	delete_dynamic_array(g_app.play_queue)
-	media.delete_library(&g_app.library)
-	delete(g_app.arena.data)
-	mem.arena_free_all(&g_app.arena)
-
-	free(g_app)
-	fmt.println("Deleted/Freed App memory")
-}
 search_song :: proc(
 	state: ^AppState,
 	query: string,

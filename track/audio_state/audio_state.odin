@@ -378,7 +378,6 @@ play_next_song :: proc(state: ^AudioState) {
 
 	next_path_index :=
 		app.g_app.play_queue_index + 1 >= len(app.g_app.all_songs) ? 0 : app.g_app.play_queue_index + 1
-	app.g_app.all_songs_item_playling = app.g_app.all_songs[next_path_index]
 
 	app.g_app.play_queue_index = next_path_index
 	update_path(state, app.g_app.all_songs[next_path_index].fullpath)

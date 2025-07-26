@@ -116,7 +116,6 @@ top_left_panel :: proc(
 						{10, 10},
 					) {
 						app.g_app.playlist_index = i
-						app.g_app.clicked_playlist = &playlists[i]
 						app.g_app.ui_view = .Playlist
 						app.g_app.last_view = .Playlist
 						// destroy thread first if it was already created
@@ -126,7 +125,7 @@ top_left_panel :: proc(
 						app.g_app.library.playlist_thread =
 							thread.create_and_start_with_poly_data4(
 								&app.g_app.mutex,
-								app.g_app.clicked_playlist,
+								&playlists[i],
 								&app.g_app.clicked_playlist_entries,
 								app.g_app.scan_playlist_done,
 								media.scan_playlist_entries,
@@ -210,7 +209,7 @@ top_right_panel :: proc(
 		case .Search:
 			title = "Search results"
 		case .Playlist:
-			title = text(g_app.clicked_playlist.meta.title)
+			title = text(g_app.library.playlists[g_app.playlist_index].meta.title)
 		}
 
 		im.SetCursorPos(im.Vec2{0, 20})
@@ -220,7 +219,6 @@ top_right_panel :: proc(
 		im.Dummy(im.Vec2{0, 20})
 
 
-		// sync.mutex_lock(&app_state.mutex)
 		size := im.GetContentRegionAvail()
 		im.BeginChild("##list-region", size) // border=true
 
@@ -278,7 +276,6 @@ bottom_panel :: proc(
 		if im.Button("Prev") {
 			prev_path_index :=
 				app_state.play_queue_index - 1 >= 0 ? app_state.play_queue_index - 1 : 0
-			app_state.all_songs_item_playling = app_state.all_songs[prev_path_index]
 			audio.update_path(audio_state, app_state.all_songs[prev_path_index].fullpath)
 			audio.create_audio_play_thread(audio_state)
 			sync.mutex_lock(&app_state.mutex)
@@ -298,7 +295,6 @@ bottom_panel :: proc(
 		if im.Button("Next") {
 			next_path_index :=
 				app_state.play_queue_index + 1 >= len(app_state.all_songs) ? app_state.play_queue_index : app_state.play_queue_index + 1
-			app_state.all_songs_item_playling = app_state.all_songs[next_path_index]
 			audio.update_path(audio_state, app_state.all_songs[next_path_index].fullpath)
 			audio.create_audio_play_thread(audio_state)
 			sync.mutex_lock(&app_state.mutex)
