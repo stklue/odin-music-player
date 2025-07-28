@@ -1,15 +1,15 @@
 package app
 
-import "core:flags"
-import "core:mem"
-import "core:slice"
-import "core:sys/windows"
 import taglib "../../taglib-odin"
 import media "../media"
+import "core:flags"
 import "core:fmt"
+import "core:mem"
 import "core:os"
+import "core:slice"
 import "core:strings"
 import "core:sync"
+import "core:sys/windows"
 import "core:thread"
 import "core:time"
 
@@ -27,21 +27,16 @@ AppState :: struct {
 	taglib_file_count:              int,
 	all_files_scanned_done:         bool,
 	scan_playlist_done:             ^bool,
-	
 	clicked_playlist_entries:       media.Songs,
 	clicked_search_results_entries: media.Songs,
-	
 	play_queue:                     media.Songs,
 	play_queue_index:               int,
-	
 	ui_view:                        UI_View,
 	last_view:                      UI_View, // when switching to the visualizer and back
-	
 	library:                        media.MediaLibrary,
 	arena:                          mem.Arena, // for app cstrings allocations
 	arena_allocator:                mem.Allocator,
-
-	search_query: 					cstring
+	search_query:                   cstring,
 }
 
 
@@ -84,7 +79,8 @@ search_song :: proc(
 	// Track which albums and artists we've already added
 	found_albums := map[string]bool{}
 	found_artists := map[string]bool{}
-
+	search_time: time.Stopwatch
+	time.stopwatch_start(&search_time)
 	// Song matches are kept separate
 	for song in songs {
 		title := strings.to_lower(fmt.tprint(song.metadata.title))
@@ -96,11 +92,11 @@ search_song :: proc(
 		if album != "" && strings.contains(album, query) && !found_albums[album] {
 			found_albums[album] = true
 			item := media.SearchItem {
-				kind       = .Album,
-				label      = strings.clone_to_cstring(
+				kind      = .Album,
+				label     = strings.clone_to_cstring(
 					fmt.tprintf("(album) %s", song.metadata.album),
 				),
-				file_name  = song.metadata.album,
+				file_name = song.metadata.album,
 			}
 
 			append(search_results, item)
@@ -110,11 +106,11 @@ search_song :: proc(
 		if artist != "" && strings.contains(artist, query) && !found_artists[artist] {
 			found_artists[artist] = true
 			item := media.SearchItem {
-				kind       = .Artist,
-				label      = strings.clone_to_cstring(
+				kind      = .Artist,
+				label     = strings.clone_to_cstring(
 					fmt.tprintf("(artist) %s", song.metadata.artist),
 				),
-				file_name  = song.metadata.artist,
+				file_name = song.metadata.artist,
 			}
 			append(search_results, item)
 		}
@@ -122,24 +118,25 @@ search_song :: proc(
 		// Check for title or filename match
 		if strings.contains(title, query) || strings.contains(filename, query) {
 			item := media.SearchItem {
-				kind       = .Title,
-				label      = strings.clone_to_cstring(
-					fmt.tprintf(
-						"(song) %s",
-						song.metadata.title,
-					),
+				kind      = .Title,
+				label     = strings.clone_to_cstring(
+					fmt.tprintf("(song) %s", song.metadata.title),
 				),
-				file_name  = song.metadata.title,
+				file_name = song.metadata.title,
 			}
 			append(search_results, item)
 		}
 	}
+	time.stopwatch_stop(&search_time)
+	fmt.printfln("Search took: %v", search_time._accumulation)
 
 	state.is_searching = true
 }
 
 
 search_one_song :: proc(all_songs: ^media.Songs, find_song: cstring, song_display: ^media.Songs) {
+	search_one_song_time: time.Stopwatch
+	time.stopwatch_start(&search_one_song_time)
 	for song in all_songs {
 		if strings.contains(fmt.tprint(song.metadata.title), fmt.tprint(find_song)) {
 			append(song_display, song)
@@ -150,17 +147,25 @@ search_one_song :: proc(all_songs: ^media.Songs, find_song: cstring, song_displa
 			return
 		}
 	}
+	time.stopwatch_stop(&search_one_song_time)
+	fmt.printfln("Search one song took: %v", search_one_song_time._accumulation)
 }
 
 search_album :: proc(all_songs: ^media.Songs, album_name: cstring, album: ^media.Songs) {
+	search_album_time: time.Stopwatch
+	time.stopwatch_start(&search_album_time)
 	for song in all_songs {
 		if song.metadata.album == album_name {
 			append(album, song)
 		}
 	}
+	time.stopwatch_stop(&search_album_time)
+	fmt.printfln("Search album took: %v", search_album_time._accumulation)
 }
 
 search_artist :: proc(all_songs: ^media.Songs, artist_name: cstring, artist: ^media.Songs) {
+	search_artist_time: time.Stopwatch
+	time.stopwatch_start(&search_artist_time)
 	for song in all_songs {
 		if strings.contains(fmt.tprint(song.metadata.artist), fmt.tprint(artist_name)) {
 			append(artist, song)
@@ -169,6 +174,8 @@ search_artist :: proc(all_songs: ^media.Songs, artist_name: cstring, artist: ^me
 			append(artist, song)
 		}
 	}
+	time.stopwatch_stop(&search_artist_time)
+	fmt.printfln("Search artist took: %v", search_artist_time._accumulation)
 }
 
 is_valid_path :: proc(path: string) -> bool {
