@@ -178,17 +178,6 @@ search_artist :: proc(all_songs: ^media.Songs, artist_name: cstring, artist: ^me
 	fmt.printfln("Search artist took: %v", search_artist_time._accumulation)
 }
 
-is_valid_path :: proc(path: string) -> bool {
-	for r in path {
-		if r < 32 || r > 126 {
-			// Skip non-ASCII printable characters that might cause issues
-			if r != '/' && r != '\\' && r != ':' {
-				return false
-			}
-		}
-	}
-	return true
-}
 media_extensions :: []string{".mp3"}
 // TODO: To run search_all_files would first have to create the metaadata.txt file and then search that
 search_all_files_archive :: proc(dir: string) {
@@ -209,7 +198,7 @@ search_all_files_archive :: proc(dir: string) {
 		path := strings.join([]string{dir, entry.name}, "/")
 
 		item := media.Song {
-			info           = entry,
+			// info           = entry,
 			name           = strings.clone_to_cstring(entry.name),
 			fullpath       = strings.clone_to_cstring(entry.fullpath),
 			lowercase_name = strings.to_lower(entry.name),
@@ -233,7 +222,8 @@ search_all_files_archive :: proc(dir: string) {
 				tag := taglib.file_tag(file)
 				if tag.dummy == 0 {
 					if len(item.name) > 20 {
-						truncated := fmt.tprintf("%.20s...", item.info.name[:20])
+						// truncated := fmt.tprintf("%.20s...", item.info.name[:20])
+						truncated := fmt.tprintf("%.20s...", fmt.tprint(item.name)[:20])
 						item.metadata.title = strings.clone_to_cstring(truncated)
 					} else {
 						item.metadata.title = item.name
@@ -243,7 +233,6 @@ search_all_files_archive :: proc(dir: string) {
 					item.metadata.year = ""
 					item.metadata.album = "Unknown Album"
 					item.metadata.genre = "Unknown Genre"
-					item.valid_metadata = false
 
 					g_app.taglib_file_count += 1
 
@@ -272,7 +261,8 @@ search_all_files_archive :: proc(dir: string) {
 				// 	}
 				// }
 				item.metadata.title =
-					len(title) > 0 ? title : strings.clone_to_cstring(item.info.name)
+					// len(title) > 0 ? title : strings.clone_to_cstring(item.info.name)
+					len(title) > 0 ? title : item.name
 
 				item.metadata.artist =
 					len(taglib.tag_artist(tag)) > 0 ? taglib.tag_artist(tag) : "Unknown Artist"
@@ -283,7 +273,6 @@ search_all_files_archive :: proc(dir: string) {
 					len(taglib.tag_album(tag)) > 0 ? taglib.tag_album(tag) : "Unknown Album"
 				item.metadata.genre =
 					len(taglib.tag_genre(tag)) > 0 ? taglib.tag_genre(tag) : "Unknown Genre"
-				item.valid_metadata = true
 
 				time.stopwatch_stop(&stop_watch)
 				duration := stop_watch._accumulation
@@ -320,14 +309,12 @@ scan_all_files :: proc(root: string) {
 		// Skip empty lines
 		if strings.trim_space(line) == "" do continue
 
-		// fmt.println(line)
 		res, alloc_err := strings.split(line, "=x=")
 		if alloc_err != nil {
 			fmt.println("Allocator error for string split", alloc_err)
 			return
 		}
 
-		// fmt.println("Result: ", res)
 		if len(res) == 1 {
 			// end of files reached
 			continue
@@ -362,7 +349,7 @@ scan_all_files :: proc(root: string) {
 		new_path, _ := strings.replace_all(path, "/", "\\")
 		// fmt.println("This is the new path: ", new_path)
 		item := media.Song {
-			info           = file_info,
+			// info           = file_info,
 			name           = strings.clone_to_cstring(res[1]),
 			fullpath       = strings.clone_to_cstring(file_info.fullpath),
 			lowercase_name = strings.to_lower(res[1]),
@@ -380,7 +367,6 @@ scan_all_files :: proc(root: string) {
 			fmt.println("Warning: incomplete metadata for", path)
 		}
 
-		item.valid_metadata = false
 
 		g_app.taglib_file_count += 1
 
@@ -406,7 +392,8 @@ write_metadata_to_txt :: proc(files: media.Songs) -> os.Error {
 		str := fmt.tprintf(
 			"%s=x=%s=x=%s=x=%s=x=%s=x=%s=x=%s\n",
 			file.dir,
-			file.info.name,
+			// file.info.name,
+			file.name,
 			file.metadata.title,
 			file.metadata.artist,
 			file.metadata.album,
@@ -519,9 +506,8 @@ process_mp3_worker :: proc(shared_data: ^Shared_Data, thread_id: int) {
 process_single_mp3 :: proc(work_item: Work_Item) -> media.Song {
 	entry := work_item.file_info
 
-
 	item := media.Song {
-		info           = entry,
+		// info           = entry,
 		name           = fmt.ctprint(entry.name),
 		fullpath       = fmt.ctprint(entry.fullpath),
 		lowercase_name = strings.to_lower(entry.name),
@@ -530,7 +516,6 @@ process_single_mp3 :: proc(work_item: Work_Item) -> media.Song {
 
 	// check if file path exists
 	if !os.exists(work_item.file_path) {
-		item.valid_metadata = false
 		return item
 	}
 
@@ -545,7 +530,8 @@ process_single_mp3 :: proc(work_item: Work_Item) -> media.Song {
 		tag := taglib.file_tag(file)
 		if tag.dummy == 0 {
 			if len(item.name) > 20 {
-				truncated := fmt.tprintf("%.20s...", item.info.name[:20])
+				// truncated := fmt.tprintf("%.20s...", item.info.name[:20])
+				truncated := fmt.tprintf("%.20s...", fmt.tprint(item.name)[:20])
 				item.metadata.title = fmt.ctprint(truncated)
 			} else {
 				item.metadata.title = item.name
@@ -555,7 +541,6 @@ process_single_mp3 :: proc(work_item: Work_Item) -> media.Song {
 			item.metadata.year = ""
 			item.metadata.album = "Unknown Album"
 			item.metadata.genre = "Unknown Genre"
-			item.valid_metadata = false
 
 			// fmt.println("Weird path but good", tag)
 			return item
@@ -679,5 +664,4 @@ extract_metadata :: proc(item: ^media.Song, tag: taglib.TagLib_Tag) {
 	item.metadata.year = fmt.ctprintf("%d", taglib.tag_year(tag))
 	item.metadata.album = len(taglib.tag_album(tag)) > 0 ? taglib.tag_album(tag) : "Unknown Album"
 	item.metadata.genre = len(taglib.tag_genre(tag)) > 0 ? taglib.tag_genre(tag) : "Unknown Genre"
-	item.valid_metadata = true
 }

@@ -2,6 +2,7 @@ package media
 import "core:encoding/xml"
 import "core:log"
 import "core:os"
+import "core:slice"
 import "core:strings"
 import "core:sync"
 import "core:thread"
@@ -13,6 +14,7 @@ import "core:unicode/utf8"
 MediaLibrary :: struct {
 	arena:           mem.Arena,
 	songs:           Songs,
+	new_songs:       [dynamic]NewSong,
 	playlists:       [dynamic]Playlist,
 	playlist_thread: ^thread.Thread,
 	search_thread:   ^thread.Thread,
@@ -40,14 +42,16 @@ RepeatOption :: enum {
 
 
 Song :: struct {
-	info:            os.File_Info,
-	name:            cstring,
-	fullpath:        cstring, // c filepath
-	lowercase_name:  string, // for searching
-	index_all_songs: int,
-	metadata:        Metadata,
-	valid_metadata:  bool,
-	dir:             string,
+	id:                int,
+	// info:              os.File_Info,
+	name:              cstring,
+	fullpath:          cstring, // c filepath
+	lowercase_name:    string, // for searching
+	index_all_songs:   int,
+	metadata:          Metadata,
+	dir:               string,
+	creation_time:     time.Time,
+	modification_time: time.Time,
 }
 
 Metadata :: struct {
@@ -59,6 +63,7 @@ Metadata :: struct {
 	genre:    cstring,
 	// duration: cstring,
 }
+
 
 import "core:fmt"
 import "core:sys/windows"
@@ -93,7 +98,6 @@ import "core:text/scanner"
 scan_all_files :: proc(
 	library: ^MediaLibrary,
 	all_songs_mutex: ^sync.Mutex,
-	// all_songs: ^Songs,
 	all_files_scan_done: ^bool,
 ) {
 	stop_watch: time.Stopwatch
@@ -153,12 +157,75 @@ scan_all_files :: proc(
 	sync.mutex_lock(all_songs_mutex)
 	// reserve(all_songs, len(temp_songs))
 	append(&library.songs, ..temp_songs[:])
+	sort_by_date_added :: proc(i, j: Song) -> bool {
+		return time.diff(i.creation_time, j.creation_time) > 0
+	}
+	slice.sort_by(library.songs[:], sort_by_date_added)
+	fmt.println("Array sorted")
 	all_files_scan_done^ = true
 	sync.mutex_unlock(all_songs_mutex)
 
 	time.stopwatch_stop(&stop_watch)
 	fmt.printfln("Processed %d files in %v", len(temp_songs), stop_watch._accumulation)
 }
+
+import "core:encoding/json"
+
+NewSong :: struct {
+	id:                int,
+	path:              string,
+	name:              string,
+	creation_time:     u64,
+	modification_time: u64,
+	title:             string,
+	artist:            string,
+	album:             string,
+	genre:             string,
+	year:              int,
+	duration:          int,
+}
+
+
+new_scan_files :: proc(
+	library: ^MediaLibrary,
+	all_songs_mutex: ^sync.Mutex,
+	all_files_scan_done: ^bool,
+) {
+	// Read the JSON file
+	json_data, read_ok := os.read_entire_file("C:\\Users\\St.Klue\\Music\\music_cache.json")
+	if !read_ok {
+		fmt.eprintln("Error: Failed to read music_cache.json", read_ok)
+		all_files_scan_done^ = true // Mark as done even on error to avoid blocking
+		return
+	}
+	defer delete(json_data)
+
+	// Parse the JSON data into a slice of Song structs
+	songs: [dynamic]NewSong
+	err := json.unmarshal(json_data, &songs)
+	if err != nil {
+		fmt.eprintln("Error: Failed to parse music_cache.json:", err)
+		all_files_scan_done^ = true
+		return
+	}
+
+	// Lock the mutex to safely update the library's songs
+	sync.mutex_lock(all_songs_mutex)
+	defer sync.mutex_unlock(all_songs_mutex)
+
+	// Free existing songs if necessary to prevent memory leaks
+	if library.songs != nil {
+		delete(library.new_songs)
+	}
+
+	// Assign the parsed songs to the library
+	library.new_songs = songs
+
+	// Mark the scan as complete
+	all_files_scan_done^ = true
+	fmt.println("Successfully loaded", len(library.songs), "songs from music_cache.json")
+}
+
 
 time_proc :: proc(message: string, run: proc()) {
 	sw: time.Stopwatch
@@ -220,7 +287,6 @@ process_line :: proc(library: ^MediaLibrary, line: ^string, songs: ^[dynamic]Son
 		fullpath       = strings.clone_to_cstring(new_path, library.arena_allocator),
 		lowercase_name = strings.to_lower(parts[1]),
 		dir            = new_path,
-		valid_metadata = false,
 	}
 
 	if count >= 7 {
@@ -467,7 +533,10 @@ scan_playlist_entries :: proc(
 		// 	fullpath       = strings.clone_to_cstring(file_info.fullpath),
 		// 	lowercase_name = strings.to_lower(file_info.name),
 		// }
-		p.info = file_info
+		// p.info = file_info
+		p.fullpath = strings.clone_to_cstring(file_info.fullpath)
+		p.creation_time = file_info.creation_time
+		p.modification_time = file_info.modification_time
 		sync.mutex_lock(playlist_mutex)
 		append(playlist_entries, p)
 		sync.mutex_unlock(playlist_mutex)
@@ -487,3 +556,204 @@ scan_playlist_entries :: proc(
 import taglib "../../taglib-odin"
 import "core:mem"
 import image "vendor:stb/image"
+
+// maps words to song IDs
+Inverted_Index :: map[string][dynamic]int
+
+Trie_Node :: struct {
+	children: map[rune]^Trie_Node,
+	song_ids: [dynamic]int, // songs matching this prefix
+}
+
+Search_System :: struct {
+	songs:     []Song, //flat array of songs
+	index:     Inverted_Index, // word -> song ids
+	trie_root: ^Trie_Node,
+}
+
+// intialize search sytem
+init_search_system :: proc(songs: []Song, allocator := context.allocator) -> ^Search_System {
+	system := new(Search_System, allocator)
+	system.songs = songs
+	system.index = make(Inverted_Index, allocator)
+	system.trie_root = new(Trie_Node, allocator)
+	system.trie_root.children = make(map[rune]^Trie_Node, allocator)
+
+	// build index and trie
+	for song, i in songs {
+		// tokeniz metadata
+		tokens := tokenize_metadata(
+			song.metadata.title,
+			song.metadata.artist,
+			song.metadata.album,
+			song.metadata.genre,
+		)
+		for token in tokens {
+			// add to inverted  index
+			append(&system.index[token], i)
+			// add to trie
+			add_to_trie(system.trie_root, token, i, allocator)
+		}
+	}
+
+	return system
+}
+
+
+// tokenize metadata
+tokenize_metadata :: proc(title, artist, album, genre: cstring) -> []string {
+	s_title := fmt.tprint(title)
+	s_album := fmt.tprint(album)
+	s_artist := fmt.tprint(artist)
+	s_genre := fmt.tprint(genre)
+	combined := strings.concatenate({s_title, " ", s_artist, " ", s_album, " ", s_genre})
+	tokens := strings.split(strings.to_lower(combined), " ")
+	return tokens
+}
+
+
+// add word to trie
+add_to_trie :: proc(root: ^Trie_Node, word: string, song_id: int, allocator := context.allocator) {
+	current := root
+	for r in word {
+		if _, ok := current.children[r]; !ok {
+			current.children[r] = new(Trie_Node, allocator)
+			current.children[r].children = make(map[rune]^Trie_Node, allocator)
+		}
+		current = current.children[r]
+		append(&current.song_ids, song_id)
+	}
+}
+
+
+search_prefix :: proc(system: ^Search_System, prefix: string) -> [dynamic]Song {
+	current := system.trie_root
+	for r in strings.to_lower(prefix) {
+		if _, ok := current.children[r]; !ok {
+			return {}
+		}
+		current = current.children[r]
+	}
+
+	result := make([dynamic]Song, len(current.song_ids))
+	// copy(result, current.song_ids)
+	for id, i in current.song_ids {
+		result[i] = system.songs[id]
+	}
+
+	return result
+}
+
+
+// cleanup search system 
+destroy_search :: proc(system: ^Search_System) {
+	// TODO: if trie nodes have  the same lifetime can use arena to free all
+	// free trie nodes recursively
+	destroy_trie(system.trie_root)
+	delete(system.index) // inverted index map
+	free(system.trie_root)
+	free(system)
+}
+
+// cleanup trie
+destroy_trie :: proc(node: ^Trie_Node) {
+	for _, child in node.children {
+		destroy_trie(child)
+	}
+	delete(node.children)
+	delete(node.song_ids)
+	free(node)
+}
+
+
+import "core:path/filepath"
+
+// scan all songs into memory
+// Gather all music files from the Music folder and its subdirectories
+gather_music_files :: proc(songs: ^[dynamic]Song, mutex: ^sync.Mutex, done: ^bool) {
+	// Dynamic array to store songs
+	// songs: [dynamic]Song
+	// defer delete(songs^) // Clean up if we fail
+
+	// Supported music file extensions
+	music_extensions := []string{".mp3", ".flac", ".wav", ".ogg"}
+
+	// Counter for assigning song IDs
+	song_id := 0
+	root_path := "C:/Users/St.Klue/Music"
+
+	// Recursive helper to process directories
+	process_directory :: proc(
+		dir_path: string,
+		songs: ^[dynamic]Song,
+		mutex: ^sync.Mutex,
+		music_extensions: []string,
+		song_id: ^int,
+	) -> bool {
+
+		// Open directory
+		dir, err := os.open(dir_path)
+		if err != nil {
+			return false
+		}
+		defer os.close(dir)
+
+		// Read directory entries
+		fis, read_err := os.read_dir(dir, 0)
+		if read_err != nil {
+			return false
+		}
+		defer delete(fis)
+
+		// Process each entry
+		for fi in fis {
+			full_path := filepath.join({dir_path, fi.name})
+			defer delete(full_path)
+
+			if fi.is_dir {
+				// Recursively process subdirectory
+				if !process_directory(full_path, songs, mutex, music_extensions, song_id) {
+					return false
+				}
+			} else {
+				// Check if file has a music extension
+				ext := strings.to_lower(filepath.ext(fi.name))
+				if slice.contains(music_extensions, ext) {
+					// Create Song struct with creation and modification times
+					song := Song {
+						id                = song_id^,
+						fullpath          = strings.clone_to_cstring(full_path), // Clone to persist
+						name              = strings.clone_to_cstring(fi.name), // Clone file name
+						creation_time     = fi.creation_time,
+						modification_time = fi.modification_time,
+					}
+					sync.mutex_lock(mutex)
+					append(songs, song)
+					sync.mutex_unlock(mutex)
+					song_id^ += 1
+				}
+			}
+		}
+		return true
+	}
+
+	// Start processing from root_path
+	id := 0
+	success := process_directory(root_path, songs, mutex, music_extensions, &id)
+	if !success {
+		done^ = true
+	}
+
+	// Convert dynamic array to slice
+	// result := slice.clone(songs[:], allocator)
+	done^ = true // thread finished 
+}
+
+// Sort songs by creation time (descending)
+sort_by_creation_time :: proc(songs: []Song) -> []Song {
+	result := slice.clone(songs)
+	slice.sort_by(result, proc(a, b: Song) -> bool {
+		return time.time_to_unix_nano(a.creation_time) > time.time_to_unix_nano(b.creation_time)
+	})
+	return result
+}

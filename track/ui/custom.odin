@@ -391,7 +391,7 @@ draw_all_songs :: proc(
 
 		if draw_information_bar(v, is_selected, {}, {size.x, 30}, {50, 10}) {
 			fmt.println("[TRACK::App] Started new play queue")
-			fmt.printf("[TRACK::App] Playing: %s\n", v.name)
+			fmt.printf("[TRACK::App] Playing: %s\n", v)
 			clear(&g_app.play_queue)
 			append(&g_app.play_queue, ..all_songs[:])
 

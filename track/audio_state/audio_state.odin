@@ -76,9 +76,11 @@ destroy_audio_state :: proc(state: ^AudioState) {
 
 // Play audio file
 play_audio :: proc(state: ^AudioState) {
+	fmt.println("hello world")
 	sync.mutex_lock(&state.mutex)
 	defer sync.mutex_unlock(&state.mutex)
 	state.thread_done = false
+	fmt.println("hello world 2")
 	log.info("Starting new song playback...")
 
 	// Stop and clean up any currently playing audio
@@ -97,6 +99,7 @@ play_audio :: proc(state: ^AudioState) {
 		ma.decoder_uninit(state.decoder)
 		state.decoder = nil
 	}
+
 
 	// Initialize new decoder
 	log.infof("Loading audio file: %s\n", state.path)
@@ -118,6 +121,8 @@ play_audio :: proc(state: ^AudioState) {
 		return
 	}
 	defer delete(data, context.temp_allocator)
+	fmt.println("hello world 3", state.path)
+
 	// err := ma.decoder_init_file_w(wide_path, nil, decoder)
 	err := ma.decoder_init_memory(raw_data(data), len(data), nil, decoder)
 

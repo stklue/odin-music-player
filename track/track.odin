@@ -119,13 +119,30 @@ main :: proc() {
 
 	all_songs_mutex: sync.Mutex
 	all_files_scan_done: bool
+	// scan_all_songs_thread := thread.create_and_start_with_poly_data3(
+	// 	&app.g_app.library,
+	// 	&all_songs_mutex,
+	// 	&all_files_scan_done,
+	// 	media.scan_all_files,
+	// )
 	scan_all_songs_thread := thread.create_and_start_with_poly_data3(
 		&app.g_app.library,
 		&all_songs_mutex,
 		&all_files_scan_done,
-		media.scan_all_files,
+		media.new_scan_files,
 	)
-
+	// scan_all_songs_thread := thread.create_and_start_with_poly_data3(
+	// 	&app.g_app.library.songs,
+	// 	&all_songs_mutex,
+	// 	&all_files_scan_done,
+	// 	media.gather_music_files,
+	// )
+	// scan_all_songs_thread := thread.create_and_start_with_poly_data3(
+	// 	&app.g_app.library.songs,
+	// 	&all_songs_mutex,
+	// 	&all_files_scan_done,
+	// )
+	// media.gather_music_files(&app.g_app.library.songs, &all_songs_mutex, &all_files_scan_done)
 	all_playlists_mutex: sync.Mutex
 	all_playlists_scan_done: bool
 	scan_playlists_thread := thread.create_and_start_with_poly_data3(
@@ -343,7 +360,7 @@ main :: proc() {
 		free(app.g_app)
 		log.info("Freed global app")
 	}
-	
+
 	audio.destroy_audio_state(audio_state)
 	if reset_tracking_allocator(&tracking_allocator) {
 		libc.getchar()
