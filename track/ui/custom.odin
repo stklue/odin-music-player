@@ -103,11 +103,11 @@ draw_information_bar :: proc(
 	color: u32
 
 	if selected {
-		color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.25}) // Cyan-blue w/ low alpha
+		color = color_vec4_to_u32(im.Vec4{0.1, 0.12, 0.2, 0.9}) // Cyan-blue w/ low alpha
 	} else if is_hovered {
 		color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.12}) // Softer cyan-blue
 	} else {
-		color = color_vec4_to_u32(im.Vec4{0.1, 0.15, 0.2, 0.6}) // Very dark blue-gray background
+		color = color_vec4_to_u32(im.Vec4{0.1, 0.12, 0.2, 0.9}) // Very dark blue-gray background
 	}
 
 
@@ -276,7 +276,14 @@ draw_custom_button :: proc(
 }
 
 
-draw_search_bar :: proc(id: string, buffer: ^[256]u8, size: im.Vec2) -> bool {
+draw_search_bar :: proc(search_buffer: ^[256]u8, size: im.Vec2) -> bool {
+// draw_search_bar :: proc(id: string, buffer: cstring, size: im.Vec2) -> bool {
+	if search_buffer == nil  {
+		fmt.println("Buffer pointer is nil")
+		panic("Buffer pointer is nil")
+	}
+	search_cstring :=transmute(cstring)search_buffer
+	
 	rounding: f32 = 6.0
 	padding := im.Vec2{3, 8}
 
@@ -314,12 +321,13 @@ draw_search_bar :: proc(id: string, buffer: ^[256]u8, size: im.Vec2) -> bool {
 	}
 
 	// Actual input field
-	cstring_buffer := cast(cstring)(&buffer[0])
+	// cstring_buffer := cast(cstring)(&buffer[0])
 	im.PushItemWidth(input_size.x)
 	edited := im.InputTextWithHint(
-		text(id),
+		"##searching_id",
 		"Search songs, albums, artists...",
-		cstring_buffer,
+		// cstring_buffer,
+		search_cstring,
 		100,
 		flags,
 	)

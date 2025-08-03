@@ -14,6 +14,7 @@ MediaLibrary :: struct {
 	arena:           mem.Arena,
 	songs:           Songs,
 	playlists:       [dynamic]Playlist,
+	playlist_index:                 int, // index into library playlists
 	playlist_thread: ^thread.Thread,
 	search_thread:   ^thread.Thread,
 	arena_allocator: mem.Allocator,
@@ -438,7 +439,6 @@ scan_playlist_entries :: proc(
 	playlist_mutex: ^sync.Mutex,
 	playlist: ^Playlist,
 	playlist_entries: ^[dynamic]Song,
-	scan_playlist_done: ^bool,
 ) {
 	stop_watch: time.Stopwatch
 	time.stopwatch_start(&stop_watch)

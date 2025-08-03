@@ -17,26 +17,20 @@ import "core:time"
 AppState :: struct {
 	mutex:                          sync.Mutex,
 	is_searching:                   bool,
-	current_view_index:             int,
-	playlist_index:                 int, // index into library playlists
-	playlist_item_index:            int,
 	search_result_index:            int,
 	all_songs:                      media.Songs,
 	total_files:                    int,
 	taglib_total_duration:          time.Duration,
 	taglib_file_count:              int,
-	all_files_scanned_done:         bool,
-	scan_playlist_done:             ^bool,
-	clicked_playlist_entries:       media.Songs,
-	clicked_search_results_entries: media.Songs,
-	play_queue:                     media.Songs,
+	clicked_playlist_entries:       media.Songs, // stores the playlist entries that was clicked on 
+	clicked_search_results_entries: media.Songs, // stores the search result entries that was clicked
+	play_queue:                     media.Songs, // stores the songs that's currently in line to play
 	play_queue_index:               int,
-	ui_view:                        UI_View,
+	ui_view:                        UI_View, // stores the UI on the right panel to show
 	last_view:                      UI_View, // when switching to the visualizer and back
-	library:                        media.MediaLibrary,
+	library:                        media.MediaLibrary, // manages all the songs
 	arena:                          mem.Arena, // for app cstrings allocations
-	arena_allocator:                mem.Allocator,
-	search_query:                   cstring,
+	arena_allocator:                mem.Allocator, // storing cstrings
 }
 
 
@@ -51,12 +45,13 @@ g_app: ^AppState
 
 init_app :: proc() -> ^AppState {
 	state := new(AppState)
-	state.playlist_index = -1 // -1 = all the songs playlist
 	state.clicked_playlist_entries = make(media.Songs, 0, 100)
 	state.clicked_search_results_entries = make(media.Songs, 0, 3000)
 	state.play_queue = make(media.Songs, 0, 3000)
 	state.ui_view = .All_Songs
 	state.last_view = .All_Songs
+	// state.search_cstring = cast(cstring)(&state.search_buffer[0])
+
 	arena_mem := make([]byte, 1 * mem.Megabyte)
 	mem.arena_init(&state.arena, arena_mem)
 	state.arena_allocator = mem.arena_allocator(&state.arena)

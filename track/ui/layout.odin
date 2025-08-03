@@ -23,6 +23,7 @@ import "core:path/filepath"
 import "core:sync"
 import "core:thread"
 
+//  stores cstrings in app arena
 text :: proc(s: string) -> cstring {
 	return strings.clone_to_cstring(s, app.g_app.arena_allocator)
 }
@@ -38,14 +39,14 @@ color_vec4_to_u32 :: proc(c: Vec4) -> u32 {
 
 
 top_left_panel :: proc(
+	search_buffer: ^[256]u8,
 	playlists: ^[dynamic]media.Playlist, // all_songs: ^[dynamic]media.Song,
 	playlists_mutex: ^sync.Mutex,
 	all_playlists_scan_done: bool,
-	app_state: ^app.AppState,
 	search_results: ^[dynamic]media.SearchItem,
 	root: string,
 	audio_state: ^audio.AudioState,
-	query_buffer: ^[256]u8,
+	// query_buffer: ^[256]u8,
 	window_size: im.Vec2,
 ) {
 	if im.Begin("##top-left", nil, {.NoTitleBar, .NoResize, .NoBackground, .NoScrollbar}) {
@@ -57,15 +58,18 @@ top_left_panel :: proc(
 		im.Dummy({10, 0})
 		im.SameLine()
 		bar_size := im.Vec2{size.x - offset_x, 40} // includes padding space
-		draw_search_bar("##search-bar", query_buffer, bar_size)
+		// draw_search_bar("##search-bar", query_buffer, bar_size)
+		draw_search_bar(search_buffer, bar_size)
+		search_cstring := transmute(cstring)search_buffer
 		if im.IsItemEdited() {
 			if app.g_app.library.search_thread  != nil {
 				thread.destroy(app.g_app.library.search_thread)
 			}
+			// fmt.tprint(cast(cstring)(&query_buffer[0])),
 			app.g_app.library.search_thread = thread.create_and_start_with_poly_data4(
 				app.g_app,
-				fmt.tprint(cast(cstring)(&query_buffer[0])),
-				&app_state.library.songs,
+				strings.clone_from_cstring(search_cstring, app.g_app.arena_allocator),
+				&app.g_app.library.songs,
 				search_results,
 				app.search_song,
 			)
@@ -95,19 +99,19 @@ top_left_panel :: proc(
 			im.Separator()
 
 			// TODO: fix this not setting to true when press ctrl and backspace
-			empty := true
-			diff: u8
-			for val in query_buffer {
-				if val != 0 {
-					diff = val
-					empty = false
-				}
-			}
+			empty := false
+			// diff: u8
+			// for val in query_buffer {
+			// 	if val != 0 {
+			// 		diff = val
+			// 		empty = false
+			// 	}
+			// }
 
 			// draw playlists
-			if empty {
+			if len(search_cstring) == 0 {
 				for v, i in playlists {
-					currently_selected := app.g_app.playlist_index == i
+					currently_selected := app.g_app.library.playlist_index == i
 					if draw_item_selectable(
 						fmt.ctprint(v.meta.title),
 						currently_selected,
@@ -115,7 +119,7 @@ top_left_panel :: proc(
 						{size.x - offset_x, 30},
 						{10, 10},
 					) {
-						app.g_app.playlist_index = i
+						app.g_app.library.playlist_index = i
 						app.g_app.ui_view = .Playlist
 						app.g_app.last_view = .Playlist
 						// destroy thread first if it was already created
@@ -123,11 +127,10 @@ top_left_panel :: proc(
 							thread.destroy(app.g_app.library.playlist_thread)
 						}
 						app.g_app.library.playlist_thread =
-							thread.create_and_start_with_poly_data4(
+							thread.create_and_start_with_poly_data3(
 								&app.g_app.mutex,
 								&playlists[i],
 								&app.g_app.clicked_playlist_entries,
-								app.g_app.scan_playlist_done,
 								media.scan_playlist_entries,
 							)
 					}
@@ -146,10 +149,10 @@ top_left_panel :: proc(
 						) {
 							app.g_app.ui_view = .Search
 							app.g_app.last_view = .Search
-							app.g_app.search_query =  search_result.file_name
+							search_cstring =  search_result.file_name
 							switch search_result.kind {
 							case .Title:
-								clear(&app_state.clicked_search_results_entries)
+								clear(&app.g_app.clicked_search_results_entries)
 								app.search_one_song(
 									&app.g_app.library.songs,
 									search_result.file_name,
@@ -187,6 +190,7 @@ top_right_panel :: proc(
 	audio_state: ^audio.AudioState,
 	window_position: im.Vec2,
 	window_size: im.Vec2,
+	search_buffer: ^[256]byte
 ) {
 	im.SetNextWindowPos(window_position)
 	im.SetNextWindowSize(window_size)
@@ -195,7 +199,7 @@ top_right_panel :: proc(
 	defer style.FramePadding = old_padding // Restore after the frame
 
 	style.FramePadding = 16
-
+	search_cstring := transmute(cstring)search_buffer
 	if im.Begin(
 		"##right-panel-header",
 		nil,
@@ -208,9 +212,9 @@ top_right_panel :: proc(
 		case .All_Songs:
 			title = "All Songs"
 		case .Search:
-			title = strings.clone_to_cstring(fmt.tprint("Search results for", g_app.search_query))
+			title = strings.clone_to_cstring(fmt.tprint("Search results for", search_cstring), g_app.arena_allocator)
 		case .Playlist:
-			title = text(g_app.library.playlists[g_app.playlist_index].meta.title)
+			title = text(g_app.library.playlists[g_app.library.playlist_index].meta.title)
 		}
 
 		im.SetCursorPos(im.Vec2{0, 20})
@@ -235,19 +239,9 @@ top_right_panel :: proc(
 		case .Playlist:
 			draw_playlist_items(audio_state, size)
 		}
-		// if app.g_app.show_visualizer {
-		// 	pos := im.GetCursorScreenPos()
-		// 	render_audio_visualizer(audio_state, pos, size)
-		// } else if app.g_app.show_clicked_playlist {
-		// 	draw_playlist_items(audio_state, size)
-		// } else if app.g_app.show_search_results {
-		// 	draw_search_results_clicked(audio_state, size)
-		// } else {
-		// 	draw_all_songs(all_songs, audio_state, size)
-		// }
+		
 
 		im.EndChild()
-		// sync.mutex_unlock(&app_state.mutex)
 	}
 	im.End()
 

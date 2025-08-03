@@ -173,12 +173,13 @@ main :: proc() {
 
 
 	//  gui state
-	song_query_buffer: [256]u8 // search buffer 
+	// song_query_buffer: [256]u8 // search buffer 
 	// Initialize once at startup
 	// ui.init_visualizer()
 
-	// for !glfw.WindowShouldClose(window) && running {
-	for !glfw.WindowShouldClose(window) && sync.atomic_load(&running) {
+	search_buffer: [256]u8
+
+	for !glfw.WindowShouldClose(window)  {
 		glfw.PollEvents()
 
 		imgui_impl_opengl3.NewFrame()
@@ -258,14 +259,13 @@ main :: proc() {
 		left_panel_window_size := im.Vec2{third_w, top_h}
 		if all_playlists_scan_done {
 			ui.top_left_panel(
+				&search_buffer,
 				&app.g_app.library.playlists,
 				&all_playlists_mutex,
 				all_playlists_scan_done,
-				app.g_app,
 				&search_results,
 				root,
 				audio_state,
-				&song_query_buffer,
 				left_panel_window_size,
 			)
 		}
@@ -282,6 +282,8 @@ main :: proc() {
 				audio_state,
 				right_panel_window_position,
 				right_panel_window_size,
+					&search_buffer
+
 			)
 		}
 
@@ -291,7 +293,7 @@ main :: proc() {
 		im.Render()
 		display_w, display_h := glfw.GetFramebufferSize(window)
 		gl.Viewport(0, 0, display_w, display_h)
-		gl.ClearColor(0.05, 0.08, 0.12, 1.0)
+		gl.ClearColor(0.1, 0.12, 0.2, 0.9)
 		gl.Clear(gl.COLOR_BUFFER_BIT)
 		imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
 

@@ -3,13 +3,13 @@
     "configurations": [
         {
             "name": "Track Music Player Debug",
-            "type": "gdb",
-            "target": "./bin/debug",
+            "type": "cppvsdbg",
             "request": "launch",
-            // "program": "${workspaceFolder}/bin/debug/track.exe",
-            // "stopAtEntry": false,
+            "program": "${workspaceFolder}/bin/debug/player.exe", // Ensure this path is correct
+            "args": [], // Add any command-line arguments if needed
+            "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "valuesFormatting": "parseText"
+            "console": "integratedTerminal" // Uncomment to use integrated terminal
         }
     ]
 }
