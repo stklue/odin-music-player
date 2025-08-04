@@ -40,15 +40,18 @@ color_vec4_to_u32 :: proc(c: Vec4) -> u32 {
 
 top_left_panel :: proc(
 	search_buffer: ^[256]u8,
-	playlists: ^[dynamic]media.Playlist, // all_songs: ^[dynamic]media.Song,
-	playlists_mutex: ^sync.Mutex,
-	all_playlists_scan_done: bool,
 	search_results: ^[dynamic]media.SearchItem,
-	root: string,
 	audio_state: ^audio.AudioState,
-	// query_buffer: ^[256]u8,
 	window_size: im.Vec2,
 ) {
+	root := "C:/Users/St.Klue/Music"
+
+	im.PushStyleColor(im.Col.ScrollbarBg, color_vec4_to_u32({0.10, 0.12, 0.18, 0.25})) // dark blue base
+	im.PushStyleColor(im.Col.ScrollbarGrab, color_vec4_to_u32({0.20, 0.50, 0.90, 0.35})) // cool blue
+	im.PushStyleColor(im.Col.ScrollbarGrabHovered, color_vec4_to_u32({0.30, 0.60, 1.00, 0.45}))
+	im.PushStyleColor(im.Col.ScrollbarGrabActive, color_vec4_to_u32({0.45, 0.80, 1.00, 0.60}))
+
+
 	if im.Begin("##top-left", nil, {.NoTitleBar, .NoResize, .NoBackground, .NoScrollbar}) {
 		offset_x: f32 = 35
 		size := im.GetContentRegionAvail()
@@ -62,7 +65,7 @@ top_left_panel :: proc(
 		draw_search_bar(search_buffer, bar_size)
 		search_cstring := transmute(cstring)search_buffer
 		if im.IsItemEdited() {
-			if app.g_app.library.search_thread  != nil {
+			if app.g_app.library.search_thread != nil {
 				thread.destroy(app.g_app.library.search_thread)
 			}
 			// fmt.tprint(cast(cstring)(&query_buffer[0])),
@@ -110,7 +113,7 @@ top_left_panel :: proc(
 
 			// draw playlists
 			if len(search_cstring) == 0 {
-				for v, i in playlists {
+				for v, i in app.g_app.library.playlists {
 					currently_selected := app.g_app.library.playlist_index == i
 					if draw_item_selectable(
 						fmt.ctprint(v.meta.title),
@@ -129,7 +132,7 @@ top_left_panel :: proc(
 						app.g_app.library.playlist_thread =
 							thread.create_and_start_with_poly_data3(
 								&app.g_app.mutex,
-								&playlists[i],
+								&app.g_app.library.playlists[i],
 								&app.g_app.clicked_playlist_entries,
 								media.scan_playlist_entries,
 							)
@@ -149,7 +152,7 @@ top_left_panel :: proc(
 						) {
 							app.g_app.ui_view = .Search
 							app.g_app.last_view = .Search
-							search_cstring =  search_result.file_name
+							search_cstring = search_result.file_name
 							switch search_result.kind {
 							case .Title:
 								clear(&app.g_app.clicked_search_results_entries)
@@ -183,14 +186,15 @@ top_left_panel :: proc(
 	}
 	im.End()
 
+	im.PopStyleColor(4)
+
 }
 top_right_panel :: proc(
-	all_songs: ^[dynamic]media.Song,
 	bolt_font: ^im.Font,
 	audio_state: ^audio.AudioState,
 	window_position: im.Vec2,
 	window_size: im.Vec2,
-	search_buffer: ^[256]byte
+	search_buffer: ^[256]byte,
 ) {
 	im.SetNextWindowPos(window_position)
 	im.SetNextWindowSize(window_size)
@@ -212,7 +216,10 @@ top_right_panel :: proc(
 		case .All_Songs:
 			title = "All Songs"
 		case .Search:
-			title = strings.clone_to_cstring(fmt.tprint("Search results for", search_cstring), g_app.arena_allocator)
+			title = strings.clone_to_cstring(
+				fmt.tprint("Search results for", search_cstring),
+				g_app.arena_allocator,
+			)
 		case .Playlist:
 			title = text(g_app.library.playlists[g_app.library.playlist_index].meta.title)
 		}
@@ -233,13 +240,13 @@ top_right_panel :: proc(
 			pos := im.GetCursorScreenPos()
 			render_audio_visualizer(audio_state, pos, size)
 		case .All_Songs:
-			draw_all_songs(all_songs, audio_state, size)
+			draw_all_songs(&g_app.library.songs, audio_state, size)
 		case .Search:
 			draw_search_results_clicked(audio_state, size)
 		case .Playlist:
 			draw_playlist_items(audio_state, size)
 		}
-		
+
 
 		im.EndChild()
 	}

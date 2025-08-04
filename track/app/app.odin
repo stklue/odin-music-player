@@ -74,8 +74,8 @@ search_song :: proc(
 	// Track which albums and artists we've already added
 	found_albums := map[string]bool{}
 	found_artists := map[string]bool{}
-	search_time: time.Stopwatch
-	time.stopwatch_start(&search_time)
+	// search_time: time.Stopwatch
+	// time.stopwatch_start(&search_time)
 	// Song matches are kept separate
 	for song in songs {
 		title := strings.to_lower(fmt.tprint(song.metadata.title))
@@ -122,8 +122,8 @@ search_song :: proc(
 			append(search_results, item)
 		}
 	}
-	time.stopwatch_stop(&search_time)
-	fmt.printfln("Search took: %v", search_time._accumulation)
+	// time.stopwatch_stop(&search_time)
+	// fmt.printfln("Search took: %v", search_time._accumulation)
 
 	state.is_searching = true
 }

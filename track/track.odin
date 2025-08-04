@@ -115,7 +115,6 @@ main :: proc() {
 
 	// init app state
 	app.g_app = app.init_app()
-	root := "C:/Users/St.Klue/Music"
 
 	all_songs_mutex: sync.Mutex
 	all_files_scan_done: bool
@@ -172,14 +171,12 @@ main :: proc() {
 	search_mutex: sync.Mutex
 
 
-	//  gui state
-	// song_query_buffer: [256]u8 // search buffer 
 	// Initialize once at startup
 	// ui.init_visualizer()
 
 	search_buffer: [256]u8
 
-	for !glfw.WindowShouldClose(window)  {
+	for !glfw.WindowShouldClose(window) {
 		glfw.PollEvents()
 
 		imgui_impl_opengl3.NewFrame()
@@ -201,7 +198,7 @@ main :: proc() {
 		// // Update audio state
 		audio.update_audio(audio_state)
 
-		// // ==================== UI Key input ====================
+		//  ==================== UI Key input ====================
 		if io.KeysDown[im.Key.Space] && im.IsKeyPressed(.Space) {
 			// Check if any text input is currently active
 			if !im.IsAnyItemActive() {
@@ -243,47 +240,28 @@ main :: proc() {
 		im.SetNextWindowPos(im.Vec2{0, 0})
 		im.SetNextWindowSize(im.Vec2{third_w, top_h})
 
-		im.PushStyleColor(im.Col.ScrollbarBg, ui.color_vec4_to_u32({0.10, 0.12, 0.18, 0.25})) // dark blue base
-		im.PushStyleColor(im.Col.ScrollbarGrab, ui.color_vec4_to_u32({0.20, 0.50, 0.90, 0.35})) // cool blue
-		im.PushStyleColor(
-			im.Col.ScrollbarGrabHovered,
-			ui.color_vec4_to_u32({0.30, 0.60, 1.00, 0.45}),
-		)
-		im.PushStyleColor(
-			im.Col.ScrollbarGrabActive,
-			ui.color_vec4_to_u32({0.45, 0.80, 1.00, 0.60}),
-		)
-
 		style := im.GetStyle()
 		style.ChildRounding = 10
 		left_panel_window_size := im.Vec2{third_w, top_h}
 		if all_playlists_scan_done {
 			ui.top_left_panel(
 				&search_buffer,
-				&app.g_app.library.playlists,
-				&all_playlists_mutex,
-				all_playlists_scan_done,
 				&search_results,
-				root,
 				audio_state,
 				left_panel_window_size,
 			)
 		}
-
-		im.PopStyleColor(4)
 
 		// ==================== Top Right ==================== 
 		right_panel_window_position := im.Vec2{third_w, 0}
 		right_panel_window_size := im.Vec2{right_w, top_h}
 		if all_files_scan_done {
 			ui.top_right_panel(
-				&app.g_app.library.songs,
 				bold_header_font,
 				audio_state,
 				right_panel_window_position,
 				right_panel_window_size,
-					&search_buffer
-
+				&search_buffer,
 			)
 		}
 
@@ -345,19 +323,10 @@ main :: proc() {
 		free(app.g_app)
 		log.info("Freed global app")
 	}
-	
+
 	audio.destroy_audio_state(audio_state)
 	if reset_tracking_allocator(&tracking_allocator) {
 		libc.getchar()
 	}
 	mem.tracking_allocator_destroy(&tracking_allocator)
 }
-
-
-// Called when glfw keystate changes
-// key_callback :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods: i32) {
-// 	// Exit program on escape pressed
-// 	if key == glfw.KEY_ESCAPE {
-// 		running = false
-// 	}
-// }
