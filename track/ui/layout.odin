@@ -212,16 +212,22 @@ top_right_panel :: proc(
 		using app
 		title: cstring
 
-		#partial switch g_app.ui_view {
+		switch g_app.ui_view {
 		case .All_Songs:
 			title = "All Songs"
 		case .Search:
-			title = strings.clone_to_cstring(
-				fmt.tprint("Search results for", search_cstring),
-				g_app.arena_allocator,
-			)
+			title = text(fmt.tprint("Search results for", search_cstring))
 		case .Playlist:
 			title = text(g_app.library.playlists[g_app.library.playlist_index].meta.title)
+		case .Visualizer:
+			#partial switch g_app.last_view {
+			case .All_Songs:
+				title = "All Songs"
+			case .Search:
+				title = text(fmt.tprint("Search results for", search_cstring))
+			case .Playlist:
+				title = text(g_app.library.playlists[g_app.library.playlist_index].meta.title)
+			}
 		}
 
 		im.SetCursorPos(im.Vec2{0, 20})

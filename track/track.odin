@@ -77,7 +77,6 @@ main :: proc() {
 
 	glfw.MakeContextCurrent(window)
 	glfw.SwapInterval(1) // vsync
-	// glfw.SetKeyCallback(window, key_callback)
 
 	gl.load_up_to(3, 2, proc(p: rawptr, name: cstring) {
 		(cast(^rawptr)p)^ = glfw.GetProcAddress(name)

@@ -418,7 +418,7 @@ draw_custom_header :: proc(title: cstring, width: f32) {
 	header_height: f32 = 60.0
 	rounding: f32 = 8.0
 
-	bg_color := color_vec4_to_u32({0.05, 0.08, 0.12, 1.0}) // deep background
+	bg_color := color_vec4_to_u32({0.1, 0.12, 0.2, 0.9}) // deep background
 	text_color := color_vec4_to_u32({0.90, 0.95, 1.00, 1.00}) // soft bluish-white
 	btn_bg := color_vec4_to_u32({0.20, 0.25, 0.35, 0.8}) // button normal
 	btn_hover := color_vec4_to_u32({0.30, 0.45, 0.65, 0.9}) // button hover
