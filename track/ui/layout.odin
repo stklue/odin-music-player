@@ -23,6 +23,25 @@ import "core:path/filepath"
 import "core:sync"
 import "core:thread"
 
+
+ICON_BUTTON_PLAY :: "\u25b6"
+ICON_BUTTON_NEXT :: "\u23e9"
+ICON_BUTTON_PREV :: "\u23ea"
+ICON_BUTTON_PAUSE :: "\u23f8"
+ICON_BUTTON_STOP :: "\u23f9"
+ICON_BUTTON_VOL_OFF :: "\uf026"
+ICON_BUTTON_VOL_LOW :: "\uf027"
+ICON_BUTTON_VOL_HIGH :: "\uf028"
+ICON_BUTTON_REPEAT_ALL :: "\uf363"
+ICON_BUTTON_NO_REPEAT :: "\u00d7"
+ICON_BUTTON_IS_SONG :: "\uf001"
+// ICON_BUTTON_IS_ALBUM :: "\uf152"
+ICON_BUTTON_IS_ALBUM :: "\uf192"
+ICON_BUTTON_IS_ARTIST :: "\uf007"
+ICON_BUTTON_PLAYLIST :: "\uf025"
+ICON_BUTTON_DEFAULT_SONG_PLAY :: "\uf587"
+
+
 //  stores cstrings in app arena
 text :: proc(s: string) -> cstring {
 	return strings.clone_to_cstring(s, app.g_app.arena_allocator)
@@ -101,16 +120,6 @@ top_left_panel :: proc(
 
 			im.Separator()
 
-			// TODO: fix this not setting to true when press ctrl and backspace
-			empty := false
-			// diff: u8
-			// for val in query_buffer {
-			// 	if val != 0 {
-			// 		diff = val
-			// 		empty = false
-			// 	}
-			// }
-
 			// draw playlists
 			if len(search_cstring) == 0 {
 				for v, i in app.g_app.library.playlists {
@@ -143,12 +152,13 @@ top_left_panel :: proc(
 				if len(search_results) > 0 && len(search_results) < 100 {
 					for search_result, i in search_results {
 						currently_selected := app.g_app.search_result_index == i
-						if draw_item_selectable(
+						if draw_selectable_search_item(
 							search_result.label,
 							currently_selected,
 							{},
 							{size.x - offset_x, 30},
 							{10, 10},
+							search_result.kind,
 						) {
 							app.g_app.ui_view = .Search
 							app.g_app.last_view = .Search
@@ -190,7 +200,6 @@ top_left_panel :: proc(
 
 }
 top_right_panel :: proc(
-	bolt_font: ^im.Font,
 	audio_state: ^audio.AudioState,
 	window_position: im.Vec2,
 	window_size: im.Vec2,
@@ -231,7 +240,7 @@ top_right_panel :: proc(
 		}
 
 		im.SetCursorPos(im.Vec2{0, 20})
-		im.PushFont(bolt_font)
+		im.PushFont(g_app.header_font)
 		draw_custom_header(title, im.GetContentRegionAvail().x)
 		im.PopFont()
 		im.Dummy(im.Vec2{0, 20})
@@ -267,85 +276,122 @@ bottom_panel :: proc(
 	im.SetNextWindowPos(im.Vec2{0, top_h})
 	im.SetNextWindowSize(im.Vec2{screen_w, third_h})
 	if im.Begin("##bottom", nil, {.NoTitleBar, .NoResize, .NoBackground}) {
-		im.PushStyleColor(im.Col.Button, 0) // transparent button bg
-		im.PushStyleColor(im.Col.ButtonHovered, color_vec4_to_u32({0.9, 0.3, 0.3, 1})) // transparent hover
-		im.PushStyleColor(im.Col.ButtonActive, 0) // transparent active
 
-		button_count: f32 = 4.0
-		button_width: f32 = 100.0
+		draw_audio_progress_bar(audio_state)
+
+		im.Dummy({0, 18})
+
 		spacing := im.GetStyle().ItemSpacing.x
-		total_width := (button_width * button_count) + (spacing * (button_count - 1))
+		frame_padding_x := im.GetStyle().FramePadding.x
 
-		avail := im.GetContentRegionAvail().x
-		offset_x := (avail - total_width) / 2.0
+		im.PushFont(app.g_app.prev_and_next_icon_font)
+		prev_size := im.CalcTextSize(ICON_BUTTON_PREV).x + 2 * frame_padding_x
+		next_size := im.CalcTextSize(ICON_BUTTON_NEXT).x + 2 * frame_padding_x
+		stop_size := im.CalcTextSize(ICON_BUTTON_STOP).x + 2 * frame_padding_x
+		repeat_all_size := im.CalcTextSize(ICON_BUTTON_REPEAT_ALL).x + 2 * frame_padding_x
+		no_repeat_size := im.CalcTextSize(ICON_BUTTON_NO_REPEAT).x + 2 * frame_padding_x
+		one_size := im.CalcTextSize("1").x + 2 * frame_padding_x
+		repeat_size := math.max(repeat_all_size, math.max(one_size, no_repeat_size))
+		im.PopFont()
 
-		// Move cursor to horizontal center
-		im.SetCursorPosX(im.GetCursorPosX() + offset_x)
-		if im.Button("Prev") {
-			prev_path_index :=
-				app_state.play_queue_index - 1 >= 0 ? app_state.play_queue_index - 1 : 0
-			audio.update_path(audio_state, app_state.all_songs[prev_path_index].fullpath)
-			audio.create_audio_play_thread(audio_state)
-			sync.mutex_lock(&app_state.mutex)
-			app_state.play_queue_index = prev_path_index
-			sync.mutex_unlock(&app_state.mutex)
-		}
+		im.PushFont(app.g_app.play_and_pause_icon_font)
+		play_size := im.CalcTextSize(ICON_BUTTON_PLAY).x + 2 * frame_padding_x
+		pause_size := im.CalcTextSize(ICON_BUTTON_PAUSE).x + 2 * frame_padding_x
+		play_button_size := math.max(play_size, pause_size)
+		im.PopFont()
 
-		im.SameLine()
+		total_width :=
+			prev_size + play_button_size + next_size + stop_size + repeat_size + (spacing * 4)
 
-		if im.Button(audio_state.is_playing ? "Pause" : "Play") {
-			audio.toggle_playback(audio_state)
-		}
+		if im.BeginTable("audio_controls", 3) {
+			im.TableSetupColumn("left", {.WidthStretch})
+			im.TableSetupColumn("center", {.WidthFixed}, total_width)
+			im.TableSetupColumn("right", {.WidthStretch})
+			im.TableNextRow()
 
-		im.SameLine()
-
-		// Stop button
-		if im.Button("Next") {
-			next_path_index :=
-				app_state.play_queue_index + 1 >= len(app_state.all_songs) ? app_state.play_queue_index : app_state.play_queue_index + 1
-			audio.update_path(audio_state, app_state.all_songs[next_path_index].fullpath)
-			audio.create_audio_play_thread(audio_state)
-			sync.mutex_lock(&app_state.mutex)
-			app_state.play_queue_index = next_path_index
-			sync.mutex_unlock(&app_state.mutex)
-		}
-		im.SameLine()
-
-		// Stop button
-		if im.Button("Stop") {
-			audio.stop_playback(audio_state)
-		}
-		im.SameLine()
-		switch audio_state.repeat_option {
-		case .All:
-			if im.Button("All") {
-				audio_state.repeat_option = .One
+			// Left column: song details
+			im.TableSetColumnIndex(0)
+			if len(app_state.play_queue) > 0 {
+				left_margin: f32 = 40.0
+				im.SetCursorPosX(im.GetCursorPosX() + left_margin)
+				im.Text(app_state.play_queue[app_state.play_queue_index].metadata.title)
+				im.SameLine()
+				im.Dummy({20, 0})
+				im.SameLine()
+				im.Text(app_state.play_queue[app_state.play_queue_index].metadata.artist)
 			}
-		case .One:
-			if im.Button("One") {
-				audio_state.repeat_option = .Off
+
+			// Center column: buttons
+			im.TableSetColumnIndex(1)
+			im.PushStyleColor(im.Col.Button, 0) // transparent button bg
+			im.PushStyleColor(im.Col.ButtonHovered, color_vec4_to_u32({0.9, 0.3, 0.3, 1})) // transparent hover
+			im.PushStyleColor(im.Col.ButtonActive, 0) // transparent active
+			im.PushStyleColor(im.Col.Text, color_vec4_to_u32({0.8, 0.8, 0.8, 0.8}))
+			im.PushFont(app.g_app.prev_and_next_icon_font)
+			if im.Button(ICON_BUTTON_PREV) {
+				prev_path_index :=
+					app_state.play_queue_index - 1 >= 0 ? app_state.play_queue_index - 1 : 0
+				audio.update_path(audio_state, app_state.all_songs[prev_path_index].fullpath)
+				audio.create_audio_play_thread(audio_state)
+				sync.mutex_lock(&app_state.mutex)
+				app_state.play_queue_index = prev_path_index
+				sync.mutex_unlock(&app_state.mutex)
 			}
-		case .Off:
-			if im.Button("Off") {
-				audio_state.repeat_option = .All
-			}
-		}
-
-
-		im.PopStyleColor(3)
-
-		draw_audio_progress_bar_and_volume_bar(audio_state)
-
-		im.Dummy({0, 20})
-
-		if len(app_state.play_queue) > 0 {
-			im.Dummy({20, 0})
+			im.PopFont()
 			im.SameLine()
-			im.Text(app_state.play_queue[app_state.play_queue_index].metadata.title)
-			im.Dummy({20, 0})
+
+
+			im.PushFont(app.g_app.play_and_pause_icon_font)
+			if im.Button(audio_state.is_playing ? ICON_BUTTON_PAUSE : ICON_BUTTON_PLAY) {
+				audio.toggle_playback(audio_state)
+			}
+
+			im.PopFont()
 			im.SameLine()
-			im.Text(app_state.play_queue[app_state.play_queue_index].metadata.artist)
+
+			// Next button
+			im.PushFont(app.g_app.prev_and_next_icon_font)
+			if im.Button(ICON_BUTTON_NEXT) {
+				next_path_index :=
+					app_state.play_queue_index + 1 >= len(app_state.all_songs) ? app_state.play_queue_index : app_state.play_queue_index + 1
+				audio.update_path(audio_state, app_state.all_songs[next_path_index].fullpath)
+				audio.create_audio_play_thread(audio_state)
+				sync.mutex_lock(&app_state.mutex)
+				app_state.play_queue_index = next_path_index
+				sync.mutex_unlock(&app_state.mutex)
+			}
+			im.SameLine()
+
+			// Stop button
+			if im.Button(ICON_BUTTON_STOP) {
+				audio.stop_playback(audio_state)
+			}
+			im.SameLine()
+			switch audio_state.repeat_option {
+			case .All:
+				if im.Button(ICON_BUTTON_REPEAT_ALL) {
+					audio_state.repeat_option = .One
+				}
+			case .One:
+				if im.Button("1") {
+					audio_state.repeat_option = .Off
+				}
+			case .Off:
+				if im.Button(ICON_BUTTON_NO_REPEAT) {
+					audio_state.repeat_option = .All
+				}
+			}
+			im.PopFont()
+			im.PopStyleColor(4)
+
+			// Right column: volume slider
+			im.TableSetColumnIndex(2)
+			draw_volume_bar(audio_state)
+
+			im.EndTable()
 		}
+
+
 	}
 	im.End()
 

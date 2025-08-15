@@ -65,7 +65,7 @@ import "core:fmt"
 import "core:sys/windows"
 
 
-SongType :: enum {
+MediaKind :: enum {
 	Title,
 	Album,
 	Artist,
@@ -79,7 +79,7 @@ FilesType :: enum {
 
 
 SearchItem :: struct {
-	kind:       SongType,
+	kind:       MediaKind,
 	label:      cstring, // What to display in UI: e.g. "The Beatles (artist)"
 	files_type: FilesType,
 	file_name:  cstring, // "The Beatles"

@@ -2,14 +2,16 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Track Music Player Debug",
-            "type": "cppvsdbg",
+            "name": "Launch Rad Debugging",
+            "type": "raddebugger",
             "request": "launch",
             "program": "${workspaceFolder}/bin/debug/player.exe", // Ensure this path is correct
-            "args": [], // Add any command-line arguments if needed
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal" // Uncomment to use integrated terminal
+            // "program": "", // Ensure this path is correct
+            "preLaunchTask": "build debug executable"
+            // "args": [], // Add any command-line arguments if needed
+            // "stopAtEntry": false,
+            // "cwd": "${workspaceFolder}",
+            // "console": "integratedTerminal" // Uncomment to use integrated terminal
         }
     ]
 }

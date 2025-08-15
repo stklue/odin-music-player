@@ -1,0 +1,11 @@
+// raddbg 0.9.20 project file
+
+recent_file: path: "../bin/release/player.exe"
+recent_file: path: "../../thread_name/thread_name.exe"
+recent_file: path: "../bin/debug/player.exe"
+target:
+{
+  executable: "../bin/debug/player.exe"
+  working_directory: "../bin/debug"
+  enabled: 1
+}

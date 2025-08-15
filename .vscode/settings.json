@@ -1,0 +1,5 @@
+{
+    "rad-debugger-communication.targetPath": "C:/Projects/track_player/bin/debug/player.exe",
+    "rad-debugger-communication.closeRaddbgOnProgramExit": false,
+    "rad-debugger-communication.radDebuggerPath": "C:\\Users\\St.Klue\\Downloads\\raddbg\\raddbg.exe"
+}

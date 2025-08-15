@@ -1,15 +1,14 @@
 package app
 
+import im "../../odin-imgui"
 import taglib "../../taglib-odin"
 import media "../media"
 import "core:flags"
 import "core:fmt"
 import "core:mem"
 import "core:os"
-import "core:slice"
 import "core:strings"
 import "core:sync"
-import "core:sys/windows"
 import "core:thread"
 import "core:time"
 
@@ -31,6 +30,34 @@ AppState :: struct {
 	library:                        media.MediaLibrary, // manages all the songs
 	arena:                          mem.Arena, // for app cstrings allocations
 	arena_allocator:                mem.Allocator, // storing cstrings
+	has_right_clicked:              bool, // whether the mouse right was click
+	last_mouse_click_pos:           [2]f32, // where the user right clicked
+	ui_right_click_ctx:             UI_Right_Click_Context,
+	ui_layer_interact:              UI_Layer_Interact, // let's us know on which layer we should handle clicks and hover
+
+	// fonts
+	application_font:               ^im.Font,
+	header_font:                    ^im.Font,
+	play_and_pause_icon_font:       ^im.Font,
+	prev_and_next_icon_font:        ^im.Font,
+	search_item_icon_font:          ^im.Font,
+}
+
+
+UI_Right_Click_Context :: enum {
+	Edit_Artist,
+	Edit_Album,
+	Show_Artist,
+	Show_Album,
+	Edit_Year,
+	Edit_Genre,
+	Edit_Title,
+	Play_Next,
+}
+
+UI_Layer_Interact :: enum {
+	Base_Layer,
+	Right_Click_Layer,
 }
 
 
@@ -50,6 +77,7 @@ init_app :: proc() -> ^AppState {
 	state.play_queue = make(media.Songs, 0, 3000)
 	state.ui_view = .All_Songs
 	state.last_view = .All_Songs
+	state.ui_layer_interact = .Base_Layer
 	// state.search_cstring = cast(cstring)(&state.search_buffer[0])
 
 	arena_mem := make([]byte, 1 * mem.Megabyte)
@@ -88,9 +116,7 @@ search_song :: proc(
 			found_albums[album] = true
 			item := media.SearchItem {
 				kind      = .Album,
-				label     = strings.clone_to_cstring(
-					fmt.tprintf("(album) %s", song.metadata.album),
-				),
+				label     = song.metadata.album,
 				file_name = song.metadata.album,
 			}
 
@@ -102,9 +128,7 @@ search_song :: proc(
 			found_artists[artist] = true
 			item := media.SearchItem {
 				kind      = .Artist,
-				label     = strings.clone_to_cstring(
-					fmt.tprintf("(artist) %s", song.metadata.artist),
-				),
+				label     = song.metadata.artist,
 				file_name = song.metadata.artist,
 			}
 			append(search_results, item)
@@ -114,9 +138,7 @@ search_song :: proc(
 		if strings.contains(title, query) || strings.contains(filename, query) {
 			item := media.SearchItem {
 				kind      = .Title,
-				label     = strings.clone_to_cstring(
-					fmt.tprintf("(song) %s", song.metadata.title),
-				),
+				label     = song.metadata.title,
 				file_name = song.metadata.title,
 			}
 			append(search_results, item)
@@ -675,4 +697,40 @@ extract_metadata :: proc(item: ^media.Song, tag: taglib.TagLib_Tag) {
 	item.metadata.album = len(taglib.tag_album(tag)) > 0 ? taglib.tag_album(tag) : "Unknown Album"
 	item.metadata.genre = len(taglib.tag_genre(tag)) > 0 ? taglib.tag_genre(tag) : "Unknown Genre"
 	item.valid_metadata = true
+}
+
+
+ICON_MIN_FA :: 0x0005
+ICON_MAX_FA :: 0xFF22
+icons_ranges := [3]im.Wchar{ICON_MIN_FA, ICON_MAX_FA, 0}
+
+load_application_font :: proc(font_atlas: ^im.FontAtlas, font_path: cstring) {
+	g_app.application_font = im.FontAtlas_AddFontFromFileTTF(font_atlas, font_path, 16)
+}
+load_header_font :: proc(font_atlas: ^im.FontAtlas, font_path: cstring) {
+	g_app.application_font = im.FontAtlas_AddFontFromFileTTF(font_atlas, font_path, 30)
+}
+load_play_and_pause_font :: proc(font_atlas: ^im.FontAtlas, font_path: cstring) {
+	g_app.play_and_pause_icon_font = im.FontAtlas_AddFontFromFileTTF(
+		font_atlas,
+		font_path,
+		20,
+		glyph_ranges = raw_data(icons_ranges[:]),
+	)
+}
+load_prev_and_next_font :: proc(font_atlas: ^im.FontAtlas, font_path: cstring) {
+	g_app.prev_and_next_icon_font = im.FontAtlas_AddFontFromFileTTF(
+		font_atlas,
+		font_path,
+		15,
+		glyph_ranges = raw_data(icons_ranges[:]),
+	)
+}
+load_search_item_font :: proc(font_atlas: ^im.FontAtlas, font_path: cstring) {
+	g_app.search_item_icon_font = im.FontAtlas_AddFontFromFileTTF(
+		font_atlas,
+		font_path,
+		14,
+		glyph_ranges = raw_data(icons_ranges[:]),
+	)
 }

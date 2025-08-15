@@ -100,20 +100,38 @@ main :: proc() {
 		imgui_impl_opengl3.Shutdown()
 	}
 
-	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad}
-	base_font := im.FontAtlas_AddFontFromFileTTF(
-		io.Fonts,
-		"C:/Projects/track_player/track/fonts/Roboto/Roboto-VariableFont_wdth,wght.ttf",
-		16,
-	)
-	bold_header_font := im.FontAtlas_AddFontFromFileTTF(
-		io.Fonts,
-		"C:/Projects/track_player/track/fonts/Roboto/static/Roboto_Condensed-Bold.ttf",
-		30,
-	)
 
 	// init app state
+	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad}
 	app.g_app = app.init_app()
+	app.load_application_font(
+		io.Fonts,
+		"C:/Projects/track_player/track/fonts/Roboto/Roboto-VariableFont_wdth,wght.ttf",
+	)
+	app.load_header_font(
+		io.Fonts,
+		"C:/Projects/track_player/track/fonts/Roboto/static/Roboto_Condensed-Bold.ttf",
+	)
+	app.load_play_and_pause_font(
+		io.Fonts,
+		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
+	)
+	// play button and pause button fonts
+	app.load_play_and_pause_font(
+		io.Fonts,
+		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
+	)
+	// prev and next fonts
+	app.load_prev_and_next_font(
+		io.Fonts,
+		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
+	)
+	// search items fonts
+	app.load_search_item_font(
+		io.Fonts,
+		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
+	)
+
 
 	all_songs_mutex: sync.Mutex
 	all_files_scan_done: bool
@@ -256,7 +274,6 @@ main :: proc() {
 		right_panel_window_size := im.Vec2{right_w, top_h}
 		if all_files_scan_done {
 			ui.top_right_panel(
-				bold_header_font,
 				audio_state,
 				right_panel_window_position,
 				right_panel_window_size,
@@ -265,7 +282,7 @@ main :: proc() {
 		}
 
 		// // ==================== Bottom ====================
-		ui.bottom_panel(app.g_app, audio_state, top_h, screen_w, third_h)
+		ui.bottom_panel(app.g_app, audio_state,  top_h, screen_w, third_h)
 
 		im.Render()
 		display_w, display_h := glfw.GetFramebufferSize(window)
