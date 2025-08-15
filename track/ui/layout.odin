@@ -268,6 +268,46 @@ top_right_panel :: proc(
 	im.End()
 
 }
+
+
+im_rotate_start :: proc() -> i32 {
+	dl := im.GetWindowDrawList()
+	return dl.VtxBuffer.Size
+}
+
+im_rotation_center :: proc(start_index: i32) -> im.Vec2 {
+	dl := im.GetWindowDrawList()
+	buf := &dl.VtxBuffer
+	l := im.Vec2{math.INF_F32, math.INF_F32}
+	u := im.Vec2{-math.INF_F32, -math.INF_F32}
+	buf_ptr := cast([^]im.DrawVert)buf.Data
+	for i in start_index ..< buf.Size {
+		pos := buf_ptr[i].pos
+		l.x = math.min(l.x, pos.x)
+		l.y = math.min(l.y, pos.y)
+		u.x = math.max(u.x, pos.x)
+		u.y = math.max(u.y, pos.y)
+	}
+	return im.Vec2{(l.x + u.x) / 2, (l.y + u.y) / 2}
+}
+
+im_rotate :: proc(v: im.Vec2, cos_a, sin_a: f32) -> im.Vec2 {
+	return im.Vec2{v.x * cos_a - v.y * sin_a, v.x * sin_a + v.y * cos_a}
+}
+
+im_rotate_end :: proc(start_index: i32, rad: f32, center: im.Vec2) {
+	s := math.sin(rad)
+	c := math.cos(rad)
+	center_offset := im_rotate(center, c, s) - center
+	dl := im.GetWindowDrawList()
+	buf := &dl.VtxBuffer
+	buf_ptr := cast([^]im.DrawVert)buf.Data
+	for i in start_index ..< buf.Size {
+		buf_ptr[i].pos = im_rotate(buf_ptr[i].pos, c, s) - center_offset
+	}
+}
+
+
 bottom_panel :: proc(
 	app_state: ^app.AppState,
 	audio_state: ^audio.AudioState,
@@ -283,7 +323,7 @@ bottom_panel :: proc(
 
 		spacing := im.GetStyle().ItemSpacing.x
 		frame_padding_x := im.GetStyle().FramePadding.x
-
+		avail_width := im.GetContentRegionAvail().x
 		im.PushFont(app.g_app.prev_and_next_icon_font)
 		prev_size := im.CalcTextSize(ICON_BUTTON_PREV).x + 2 * frame_padding_x
 		next_size := im.CalcTextSize(ICON_BUTTON_NEXT).x + 2 * frame_padding_x
@@ -300,10 +340,14 @@ bottom_panel :: proc(
 		play_button_size := math.max(play_size, pause_size)
 		im.PopFont()
 
-		total_width :=
-			prev_size + play_button_size + next_size + stop_size + repeat_size + (spacing * 4)
-
-		if im.BeginTable("audio_controls", 3) {
+		// total_width :=
+		// 	prev_size + play_button_size + next_size + stop_size + repeat_size + (spacing * 4)
+		total_width: f32 = avail_width * 0.4
+		im.PushFont(app.g_app.icon_font_2xl)
+		default_album_text_size := im.CalcTextSize(ICON_BUTTON_DEFAULT_SONG_PLAY).x
+		im.PopFont()
+		if im.BeginTable("audio_controls", 4) {
+			im.TableSetupColumn("album_art", {.WidthFixed}, 2 * default_album_text_size)
 			im.TableSetupColumn("left", {.WidthStretch})
 			im.TableSetupColumn("center", {.WidthFixed}, total_width)
 			im.TableSetupColumn("right", {.WidthStretch})
@@ -314,20 +358,44 @@ bottom_panel :: proc(
 			if len(app_state.play_queue) > 0 {
 				left_margin: f32 = 40.0
 				im.SetCursorPosX(im.GetCursorPosX() + left_margin)
+				im.PushStyleColor(im.Col.Text, color_vec4_to_u32({0.8, 0.82, 0.9, 0.5}))
+				im.PushFont(app.g_app.icon_font_2xl)
+
+				rotation_start_index := im_rotate_start()
+				im.Text(ICON_BUTTON_DEFAULT_SONG_PLAY)
+				center := im_rotation_center(rotation_start_index)
+				rad := f32(im.GetTime() * math.PI)
+				im_rotate_end(rotation_start_index, rad, center)
+
+				im.PopFont()
+				im.PopStyleColor()
+			}
+
+			im.TableSetColumnIndex(1)
+			if len(app_state.play_queue) > 0 {
+				left_margin: f32 = 20.0
+				im.SetCursorPosX(im.GetCursorPosX() + left_margin)
 				im.Text(app_state.play_queue[app_state.play_queue_index].metadata.title)
-				im.SameLine()
-				im.Dummy({20, 0})
-				im.SameLine()
+				im.Dummy({10, 0})
+				im.SetCursorPosX(im.GetCursorPosX() + left_margin)
 				im.Text(app_state.play_queue[app_state.play_queue_index].metadata.artist)
 			}
 
 			// Center column: buttons
-			im.TableSetColumnIndex(1)
+			im.TableSetColumnIndex(2)
 			im.PushStyleColor(im.Col.Button, 0) // transparent button bg
-			im.PushStyleColor(im.Col.ButtonHovered, color_vec4_to_u32({0.9, 0.3, 0.3, 1})) // transparent hover
+			im.PushStyleColor(im.Col.ButtonHovered, color_vec4_to_u32({0.52, 0.5, 0.6, 0.5})) // transparent hover
 			im.PushStyleColor(im.Col.ButtonActive, 0) // transparent active
 			im.PushStyleColor(im.Col.Text, color_vec4_to_u32({0.8, 0.8, 0.8, 0.8}))
 			im.PushFont(app.g_app.prev_and_next_icon_font)
+			im.PushStyleVar(.FrameRounding, 6.0)
+			im.PushStyleVarImVec2(.FramePadding, im.Vec2{4, 4}) // X, Y padding
+
+			right_margin: f32 = 100.0
+			im.SetCursorPosX(im.GetCursorPosX() + right_margin)
+
+			last_cursor_pos_y := im.GetCursorPosY()
+			im.SetCursorPosY(last_cursor_pos_y + default_album_text_size/8)
 			if im.Button(ICON_BUTTON_PREV) {
 				prev_path_index :=
 					app_state.play_queue_index - 1 >= 0 ? app_state.play_queue_index - 1 : 0
@@ -340,7 +408,7 @@ bottom_panel :: proc(
 			im.PopFont()
 			im.SameLine()
 
-
+			im.SetCursorPosY(last_cursor_pos_y)
 			im.PushFont(app.g_app.play_and_pause_icon_font)
 			if im.Button(audio_state.is_playing ? ICON_BUTTON_PAUSE : ICON_BUTTON_PLAY) {
 				audio.toggle_playback(audio_state)
@@ -381,11 +449,12 @@ bottom_panel :: proc(
 					audio_state.repeat_option = .All
 				}
 			}
+			im.PopStyleVar(2)
 			im.PopFont()
 			im.PopStyleColor(4)
 
 			// Right column: volume slider
-			im.TableSetColumnIndex(2)
+			im.TableSetColumnIndex(3)
 			draw_volume_bar(audio_state)
 
 			im.EndTable()

@@ -50,9 +50,9 @@ draw_item_selectable :: proc(
 	color: u32
 
 	if selected {
-		color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.25}) // Cyan-blue w/ low alpha
+		color = color_vec4_to_u32({0.52, 0.5, 0.6, 0.25})
 	} else if is_hovered {
-		color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.12}) // Softer cyan-blue
+		color = color_vec4_to_u32({0.52, 0.5, 0.6, 0.25})
 	}
 
 
@@ -325,7 +325,7 @@ draw_information_bar :: proc(
 		if selected {
 			color = color_vec4_to_u32(im.Vec4{0.1, 0.12, 0.2, 0.9}) // Cyan-blue w/ low alpha
 		} else if is_hovered {
-			color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.12}) // Softer cyan-blue
+			color = color_vec4_to_u32({0.52, 0.5, 0.6, 0.25})
 		} else {
 			color = color_vec4_to_u32(im.Vec4{0.1, 0.12, 0.2, 0.9}) // Very dark blue-gray background
 		}
@@ -479,9 +479,9 @@ draw_custom_button :: proc(
 
 	color: u32
 	if is_hovered {
-		color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.12}) // Softer cyan-blue
+		color = color_vec4_to_u32({0.52, 0.5, 0.6, 0.25})
 	} else {
-		color = color_vec4_to_u32(im.Vec4{0.2, 0.8, 1.0, 0.25}) // Cyan-blue w/ low alpha
+		color = color_vec4_to_u32({0.52, 0.5, 0.6, 0.25})
 	}
 
 
@@ -722,7 +722,7 @@ draw_audio_progress_bar :: proc(audio_state: ^audio.AudioState) {
 
 	avail_width := im.GetContentRegionAvail().x
 	usable_width := avail_width - left_margin - right_margin
-	height :f32= 10.0
+	height: f32 = 10.0
 
 	min_cur := int(math.floor(audio_state.current_time / 60))
 	sec_cur := int(math.floor(math.mod(audio_state.current_time, 60)))
@@ -731,13 +731,7 @@ draw_audio_progress_bar :: proc(audio_state: ^audio.AudioState) {
 
 	// label memory should be freed
 	label := strings.clone_to_cstring(
-		fmt.tprintf(
-			"%d:%02d / %d:%02d",
-			min_cur,
-			sec_cur,
-			min_dur,
-			sec_dur,
-		),
+		fmt.tprintf("%d:%02d / %d:%02d", min_cur, sec_cur, min_dur, sec_dur),
 		app.g_app.arena_allocator,
 	)
 	text_size := im.CalcTextSize(label)
@@ -793,7 +787,7 @@ draw_audio_progress_bar :: proc(audio_state: ^audio.AudioState) {
 
 	center := im.Vec2{handle_x, p0.y + height / 2}
 	im.DrawList_AddCircleFilled(draw_list, center, handle_radius, col_handle)
-	
+
 	text_pos := im.Vec2{p0.x + progress_width + spacing, p0.y + (height - text_size.y) / 2}
 	im.DrawList_AddText(draw_list, text_pos, color_vec4_to_u32({0.9, 0.95, 1.0, 1.0}), label)
 
@@ -808,20 +802,11 @@ draw_volume_bar :: proc(audio_state: ^audio.AudioState) {
 
 	avail_width := im.GetContentRegionAvail().x
 	usable_width := avail_width - left_margin - right_margin
-	height :f32= 10.0
+	height: f32 = 10.0
 
 	// ========== VOLUME SLIDER ==========
 
-	// label memory should be freed
-	label := strings.clone_to_cstring(
-		fmt.tprintf(
-			"%.0f%%",
-			audio_state.volume * 100,
-		),
-		app.g_app.arena_allocator,
-	)
-	text_size := im.CalcTextSize(label)
-	slider_width := usable_width - spacing - text_size.x
+	slider_width := usable_width - spacing - 40.0
 
 	im.PushID("volume_slider")
 
@@ -858,9 +843,6 @@ draw_volume_bar :: proc(audio_state: ^audio.AudioState) {
 
 	vol_center := im.Vec2{v_handle_x, v_p0.y + height / 2}
 	im.DrawList_AddCircleFilled(vol_draw_list, vol_center, v_handle_radius, col_handle)
-	
-	text_pos := im.Vec2{v_p0.x + slider_width + spacing, v_p0.y + (height - text_size.y) / 2}
-	im.DrawList_AddText(vol_draw_list, text_pos, color_vec4_to_u32({0.9, 0.95, 1.0, 1.0}), label)
 
 	im.PopID()
 }

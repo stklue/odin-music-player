@@ -41,6 +41,7 @@ AppState :: struct {
 	play_and_pause_icon_font:       ^im.Font,
 	prev_and_next_icon_font:        ^im.Font,
 	search_item_icon_font:          ^im.Font,
+	icon_font_2xl:                  ^im.Font,
 }
 
 
@@ -714,7 +715,7 @@ load_play_and_pause_font :: proc(font_atlas: ^im.FontAtlas, font_path: cstring) 
 	g_app.play_and_pause_icon_font = im.FontAtlas_AddFontFromFileTTF(
 		font_atlas,
 		font_path,
-		20,
+		30,
 		glyph_ranges = raw_data(icons_ranges[:]),
 	)
 }
@@ -731,6 +732,14 @@ load_search_item_font :: proc(font_atlas: ^im.FontAtlas, font_path: cstring) {
 		font_atlas,
 		font_path,
 		14,
+		glyph_ranges = raw_data(icons_ranges[:]),
+	)
+}
+load_icon_font_2xl :: proc(font_atlas: ^im.FontAtlas) {
+	g_app.icon_font_2xl = im.FontAtlas_AddFontFromFileTTF(
+		font_atlas,
+		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
+		60,
 		glyph_ranges = raw_data(icons_ranges[:]),
 	)
 }

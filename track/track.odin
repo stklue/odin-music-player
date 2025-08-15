@@ -131,6 +131,7 @@ main :: proc() {
 		io.Fonts,
 		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
 	)
+	app.load_icon_font_2xl(io.Fonts)
 
 
 	all_songs_mutex: sync.Mutex
