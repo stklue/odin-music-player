@@ -132,6 +132,7 @@ main :: proc() {
 		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
 	)
 	app.load_icon_font_2xl(io.Fonts)
+	app.load_icon_font_sm(io.Fonts)
 
 
 	all_songs_mutex: sync.Mutex
@@ -176,12 +177,11 @@ main :: proc() {
 	ma.engine_init(nil, &audio_state.engine)
 	defer ma.engine_uninit(&audio_state.engine)
 
-
-	style := im.GetStyle()
-	style.Colors[im.Col.ScrollbarBg] = im.Vec4{0.10, 0.12, 0.18, 0.25}
-	style.Colors[im.Col.ScrollbarGrab] = im.Vec4{0.20, 0.50, 0.90, 0.35}
-	style.Colors[im.Col.ScrollbarGrabHovered] = im.Vec4{0.30, 0.60, 1.00, 0.45}
-	style.Colors[im.Col.ScrollbarGrabActive] = im.Vec4{0.45, 0.80, 1.00, 0.60}
+	// global styles
+	im.PushStyleColor(im.Col.ScrollbarBg, im.ColorConvertFloat4ToU32({0.10, 0.12, 0.18, 0.25})) 
+	im.PushStyleColor(im.Col.ScrollbarGrab, im.ColorConvertFloat4ToU32({0.52, 0.5, 0.6, 0.25})) 
+	im.PushStyleColor(im.Col.ScrollbarGrabHovered, im.ColorConvertFloat4ToU32({0.52, 0.5, 0.6, 0.6}))
+	im.PushStyleColor(im.Col.ScrollbarGrabActive, im.ColorConvertFloat4ToU32({0.52, 0.5, 0.6, 0.8}))
 
 
 	// globals

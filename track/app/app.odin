@@ -42,6 +42,7 @@ AppState :: struct {
 	prev_and_next_icon_font:        ^im.Font,
 	search_item_icon_font:          ^im.Font,
 	icon_font_2xl:                  ^im.Font,
+	icon_font_sm:                  ^im.Font,
 }
 
 
@@ -740,6 +741,14 @@ load_icon_font_2xl :: proc(font_atlas: ^im.FontAtlas) {
 		font_atlas,
 		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
 		60,
+		glyph_ranges = raw_data(icons_ranges[:]),
+	)
+}
+load_icon_font_sm :: proc(font_atlas: ^im.FontAtlas) {
+	g_app.icon_font_sm = im.FontAtlas_AddFontFromFileTTF(
+		font_atlas,
+		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
+		12,
 		glyph_ranges = raw_data(icons_ranges[:]),
 	)
 }

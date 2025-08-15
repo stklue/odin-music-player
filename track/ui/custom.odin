@@ -775,11 +775,11 @@ draw_audio_progress_bar :: proc(audio_state: ^audio.AudioState) {
 	handle_x := p0.x + progress_width * value
 	handle_radius: f32 = active || hovered ? 12.0 : 10.0
 
-	col_bg := color_vec4_to_u32({0.1, 0.2, 0.25, 0.2}) // background
-	col_fg := color_vec4_to_u32({0.2, 0.8, 1.0, 0.35}) // progress bar fill
-	col_handle := color_vec4_to_u32({0.2, 0.9, 1.0, 0.75}) // draggable circle
-	col_border := color_vec4_to_u32({0.3, 0.9, 1.0, 0.4}) // outer border line
-	rounding: f32 = 2.0
+	col_bg := color_vec4_to_u32({0.1, 0.2, 0.25, 0.4}) // background
+	col_fg := color_vec4_to_u32({0.52, 0.5, 0.6, 1}) // progress bar fill
+	col_handle := color_vec4_to_u32({0.52, 0.5, 0.6, 1}) // draggable circle
+	col_border := color_vec4_to_u32({0.1, 0.2, 0.25, 0.4}) // outer border line
+	rounding: f32 = 4.0
 
 	im.DrawList_AddRectFilled(draw_list, p0, p1, col_bg, rounding)
 	im.DrawList_AddRectFilled(draw_list, p0, im.Vec2{handle_x, p1.y}, col_fg, rounding)
@@ -796,24 +796,29 @@ draw_audio_progress_bar :: proc(audio_state: ^audio.AudioState) {
 
 }
 draw_volume_bar :: proc(audio_state: ^audio.AudioState) {
-	left_margin: f32 = 40.0
-	right_margin: f32 = 40.0
+	left_margin: f32 = 5.0
+	right_margin: f32 = 100.0
 	spacing := im.GetStyle().ItemSpacing.x
 
 	avail_width := im.GetContentRegionAvail().x
 	usable_width := avail_width - left_margin - right_margin
 	height: f32 = 10.0
 
-	// ========== VOLUME SLIDER ==========
 
-	slider_width := usable_width - spacing - 40.0
+	icon_pos := im.GetCursorScreenPos()
+
+	// ---------------- SLIDER ----------------
+	slider_x := icon_pos.x +  spacing
+	slider_width := usable_width - spacing
 
 	im.PushID("volume_slider")
 
 	volume_slider_pos := im.GetCursorScreenPos()
-	volume_slider_pos.x += left_margin
+	volume_slider_pos.x = slider_x
+	volume_slider_pos.y += 5
 
 	volume_slider_size := im.Vec2{slider_width, height}
+
 	im.SetCursorScreenPos(volume_slider_pos)
 	im.InvisibleButton("##volume_slider", volume_slider_size)
 
@@ -823,6 +828,7 @@ draw_volume_bar :: proc(audio_state: ^audio.AudioState) {
 		audio_state.volume = math.clamp(new_volume, 0.0, 1.0)
 		audio.set_volume(audio_state, audio_state.volume)
 	}
+
 	vol_hovered := im.IsItemHovered()
 	vol_active := im.IsItemActive()
 
@@ -830,12 +836,13 @@ draw_volume_bar :: proc(audio_state: ^audio.AudioState) {
 	v_p0 := volume_slider_pos
 	v_p1 := im.Vec2{v_p0.x + slider_width, v_p0.y + height}
 	v_handle_x := v_p0.x + slider_width * audio_state.volume
-	v_handle_radius: f32 = vol_active || vol_hovered ? 7.0 : 5.0
-	col_bg := color_vec4_to_u32({0.1, 0.2, 0.25, 0.2}) // background
-	col_fg := color_vec4_to_u32({0.2, 0.8, 1.0, 0.35}) // progress bar fill
-	col_handle := color_vec4_to_u32({0.2, 0.9, 1.0, 0.75}) // draggable circle
-	col_border := color_vec4_to_u32({0.3, 0.9, 1.0, 0.4}) // outer border line
-	rounding: f32 = 2.0
+	v_handle_radius: f32
+	if vol_active || vol_hovered {v_handle_radius = 7.0} else {v_handle_radius = 5.0}
+	col_bg := color_vec4_to_u32({0.1, 0.2, 0.25, 0.4})
+	col_fg := color_vec4_to_u32({0.52, 0.5, 0.6, 1})
+	col_handle := color_vec4_to_u32({0.52, 0.5, 0.6, 1})
+	col_border := color_vec4_to_u32({0.1, 0.2, 0.25, 0.4})
+	rounding: f32 = 4.0
 
 	im.DrawList_AddRectFilled(vol_draw_list, v_p0, v_p1, col_bg, rounding)
 	im.DrawList_AddRectFilled(vol_draw_list, v_p0, im.Vec2{v_handle_x, v_p1.y}, col_fg, rounding)
@@ -846,6 +853,7 @@ draw_volume_bar :: proc(audio_state: ^audio.AudioState) {
 
 	im.PopID()
 }
+
 
 // draw right click options bar item
 draw_option_item :: proc(

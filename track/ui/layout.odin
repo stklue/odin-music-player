@@ -65,12 +65,6 @@ top_left_panel :: proc(
 ) {
 	root := "C:/Users/St.Klue/Music"
 
-	im.PushStyleColor(im.Col.ScrollbarBg, color_vec4_to_u32({0.10, 0.12, 0.18, 0.25})) // dark blue base
-	im.PushStyleColor(im.Col.ScrollbarGrab, color_vec4_to_u32({0.20, 0.50, 0.90, 0.35})) // cool blue
-	im.PushStyleColor(im.Col.ScrollbarGrabHovered, color_vec4_to_u32({0.30, 0.60, 1.00, 0.45}))
-	im.PushStyleColor(im.Col.ScrollbarGrabActive, color_vec4_to_u32({0.45, 0.80, 1.00, 0.60}))
-
-
 	if im.Begin("##top-left", nil, {.NoTitleBar, .NoResize, .NoBackground, .NoScrollbar}) {
 		offset_x: f32 = 35
 		size := im.GetContentRegionAvail()
@@ -195,9 +189,6 @@ top_left_panel :: proc(
 		im.EndChild()
 	}
 	im.End()
-
-	im.PopStyleColor(4)
-
 }
 top_right_panel :: proc(
 	audio_state: ^audio.AudioState,
@@ -308,6 +299,13 @@ im_rotate_end :: proc(start_index: i32, rad: f32, center: im.Vec2) {
 }
 
 
+draw_icon_button :: proc(icon: cstring, font: ^im.Font) {
+	// im.PushFont(font)
+	im.Text(icon)
+	// im.PopFont()
+}
+
+
 bottom_panel :: proc(
 	app_state: ^app.AppState,
 	audio_state: ^audio.AudioState,
@@ -387,15 +385,15 @@ bottom_panel :: proc(
 			im.PushStyleColor(im.Col.ButtonHovered, color_vec4_to_u32({0.52, 0.5, 0.6, 0.5})) // transparent hover
 			im.PushStyleColor(im.Col.ButtonActive, 0) // transparent active
 			im.PushStyleColor(im.Col.Text, color_vec4_to_u32({0.8, 0.8, 0.8, 0.8}))
-			im.PushFont(app.g_app.prev_and_next_icon_font)
 			im.PushStyleVar(.FrameRounding, 6.0)
 			im.PushStyleVarImVec2(.FramePadding, im.Vec2{4, 4}) // X, Y padding
+			im.PushFont(app.g_app.prev_and_next_icon_font)
 
 			right_margin: f32 = 100.0
 			im.SetCursorPosX(im.GetCursorPosX() + right_margin)
 
 			last_cursor_pos_y := im.GetCursorPosY()
-			im.SetCursorPosY(last_cursor_pos_y + default_album_text_size/8)
+			im.SetCursorPosY(last_cursor_pos_y + default_album_text_size / 8)
 			if im.Button(ICON_BUTTON_PREV) {
 				prev_path_index :=
 					app_state.play_queue_index - 1 >= 0 ? app_state.play_queue_index - 1 : 0
@@ -449,13 +447,21 @@ bottom_panel :: proc(
 					audio_state.repeat_option = .All
 				}
 			}
-			im.PopStyleVar(2)
-			im.PopFont()
-			im.PopStyleColor(4)
 
 			// Right column: volume slider
 			im.TableSetColumnIndex(3)
+			// ---------------- ICON ----------------
+			icon_text := ICON_BUTTON_VOL_HIGH
+			icon_font := app.g_app.icon_font_sm
+			icon_size := im.CalcTextSize(ICON_BUTTON_VOL_HIGH)
+			icon_pos := im.GetCursorScreenPos()
+			im.SetCursorScreenPos(icon_pos)
+			im.Button(ICON_BUTTON_VOL_HIGH)
+			im.SameLine()
 			draw_volume_bar(audio_state)
+			im.PopFont()
+			im.PopStyleVar(2)
+			im.PopStyleColor(4)
 
 			im.EndTable()
 		}
