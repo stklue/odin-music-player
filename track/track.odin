@@ -63,11 +63,10 @@ main :: proc() {
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 3)
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 2)
 	glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
-	glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, 1) // i32(true)
+	glfw.WindowHint(glfw.OPENGL_FORWARD_COMPAT, 1)
 	monitor := glfw.GetPrimaryMonitor()
 	mode := glfw.GetVideoMode(monitor)
 	window := glfw.CreateWindow(1920, 1080, "Music Player", nil, nil)
-	// assert(window != nil)
 	if window == nil {
 		fmt.println("Unable to create window")
 		return
@@ -90,68 +89,42 @@ main :: proc() {
 	io := im.GetIO()
 
 	imgui_impl_glfw.InitForOpenGL(window, true)
-	defer {
-		log.info("Shutting down ImGui GLFW")
-		imgui_impl_glfw.Shutdown()
-	}
 	imgui_impl_opengl3.Init("#version 150")
 	defer {
 		log.info("Shutting down ImGui OpenGL3")
 		imgui_impl_opengl3.Shutdown()
+		log.info("Shutting down ImGui GLFW")
+		imgui_impl_glfw.Shutdown()
 	}
 
 
 	// init app state
 	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad}
 	app.g_app = app.init_app()
-	app.load_application_font(
-		io.Fonts,
-		"C:/Projects/track_player/track/fonts/Roboto/Roboto-VariableFont_wdth,wght.ttf",
-	)
-	app.load_header_font(
-		io.Fonts,
-		"C:/Projects/track_player/track/fonts/Roboto/static/Roboto_Condensed-Bold.ttf",
-	)
-	app.load_play_and_pause_font(
-		io.Fonts,
-		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
-	)
-	// play button and pause button fonts
-	app.load_play_and_pause_font(
-		io.Fonts,
-		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
-	)
-	// prev and next fonts
-	app.load_prev_and_next_font(
-		io.Fonts,
-		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
-	)
-	// search items fonts
-	app.load_search_item_font(
-		io.Fonts,
-		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
-	)
-	app.load_icon_font_2xl(io.Fonts)
-	app.load_icon_font_sm(io.Fonts)
+	app.load_all_fonts(io.Fonts)
+	ui.set_global_style()
 
+	library: media.MediaLibrary
+	media.init_library(&library)
+	media.create_and_start_scan_all_songs_thread(&library)
+	media.create_and_start_scan_playlists_thread(&library)
+	// all_songs_mutex: sync.Mutex
+	// all_files_scan_done: bool
+	// scan_all_songs_thread := thread.create_and_start_with_poly_data3(
+	// 	&app.g_app.library,
+	// 	&all_songs_mutex,
+	// 	&all_files_scan_done,
+	// 	media.scan_all_files,
+	// )
 
-	all_songs_mutex: sync.Mutex
-	all_files_scan_done: bool
-	scan_all_songs_thread := thread.create_and_start_with_poly_data3(
-		&app.g_app.library,
-		&all_songs_mutex,
-		&all_files_scan_done,
-		media.scan_all_files,
-	)
-
-	all_playlists_mutex: sync.Mutex
-	all_playlists_scan_done: bool
-	scan_playlists_thread := thread.create_and_start_with_poly_data3(
-		&app.g_app.library,
-		&all_playlists_mutex,
-		&all_playlists_scan_done,
-		media.scan_all_playlists,
-	)
+	// all_playlists_mutex: sync.Mutex
+	// all_playlists_scan_done: bool
+	// scan_playlists_thread := thread.create_and_start_with_poly_data3(
+	// 	&app.g_app.library,
+	// 	&all_playlists_mutex,
+	// 	&all_playlists_scan_done,
+	// 	media.scan_all_playlists,
+	// )
 
 
 	// Use the sear_all_files with write metadata using taglib because it's slow
@@ -177,21 +150,10 @@ main :: proc() {
 	ma.engine_init(nil, &audio_state.engine)
 	defer ma.engine_uninit(&audio_state.engine)
 
-	// global styles
-	im.PushStyleColor(im.Col.ScrollbarBg, im.ColorConvertFloat4ToU32({0.10, 0.12, 0.18, 0.25})) 
-	im.PushStyleColor(im.Col.ScrollbarGrab, im.ColorConvertFloat4ToU32({0.52, 0.5, 0.6, 0.25})) 
-	im.PushStyleColor(im.Col.ScrollbarGrabHovered, im.ColorConvertFloat4ToU32({0.52, 0.5, 0.6, 0.6}))
-	im.PushStyleColor(im.Col.ScrollbarGrabActive, im.ColorConvertFloat4ToU32({0.52, 0.5, 0.6, 0.8}))
-
 
 	// globals
 	search_results: [dynamic]media.SearchItem
 	search_mutex: sync.Mutex
-
-
-	// Initialize once at startup
-	// ui.init_visualizer()
-
 	search_buffer: [256]u8
 
 	for !glfw.WindowShouldClose(window) {
@@ -202,15 +164,12 @@ main :: proc() {
 		im.NewFrame()
 
 		// ==================== Layout dimensions ====================
-		viewport := im.GetMainViewport()
-		screen_w := io.DisplaySize.x
-		screen_h := io.DisplaySize.y
-
-		third_w := screen_w / 4
-		third_h := screen_h / 6
-
-		top_h := screen_h - third_h // top 2/3 of height
-		right_w := screen_w - third_w // right 2/3 of width
+		// screen_w := io.DisplaySize.x
+		// screen_h := io.DisplaySize.y
+		// third_w := screen_w / 4
+		// third_h := screen_h / 6
+		// top_h := screen_h - third_h // top 2/3 of height
+		// right_w := screen_w - third_w // right 2/3 of width
 
 
 		// // Update audio state
@@ -243,47 +202,39 @@ main :: proc() {
 		if im.IsKeyPressed(.LeftArrow, true) {
 			audio.skip_2s_backward(audio_state)
 		}
-		if im.IsKeyPressed(.LeftCtrl, false) || im.IsKeyPressed(.RightCtrl, false) {
-			if im.IsKeyPressed(.RightArrow, false) {
-				audio.skip_5s_forward(audio_state)
-			}
+		if im.IsKeyPressed(.RightArrow, false) {
+			audio.skip_5s_forward(audio_state)
 		}
-		if im.IsKeyPressed(.LeftCtrl, false) || im.IsKeyPressed(.RightCtrl, false) {
-			if im.IsKeyPressed(.LeftArrow, false) {
-				audio.skip_5s_backward(audio_state)
-			}
+		if im.IsKeyPressed(.LeftArrow, false) {
+			audio.skip_5s_backward(audio_state)
 		}
 
-		// ==================== Top Left ====================
-		im.SetNextWindowPos(im.Vec2{0, 0})
-		im.SetNextWindowSize(im.Vec2{third_w, top_h})
+		// // ==================== Top Left ====================
+		// im.SetNextWindowPos(im.Vec2{0, 0})
+		// im.SetNextWindowSize(im.Vec2{third_w, top_h})
 
-		style := im.GetStyle()
-		style.ChildRounding = 10
-		left_panel_window_size := im.Vec2{third_w, top_h}
-		if all_playlists_scan_done {
-			ui.top_left_panel(
-				&search_buffer,
-				&search_results,
-				audio_state,
-				left_panel_window_size,
-			)
-		}
+		// style := im.GetStyle()
+		// style.ChildRounding = 10
+		// left_panel_window_size := im.Vec2{third_w, top_h}
+		// if all_playlists_scan_done {
+		// 	ui.top_left_panel(&search_buffer, &search_results, audio_state, left_panel_window_size)
+		// }
 
-		// ==================== Top Right ==================== 
-		right_panel_window_position := im.Vec2{third_w, 0}
-		right_panel_window_size := im.Vec2{right_w, top_h}
-		if all_files_scan_done {
-			ui.top_right_panel(
-				audio_state,
-				right_panel_window_position,
-				right_panel_window_size,
-				&search_buffer,
-			)
-		}
+		// // ==================== Top Right ==================== 
+		// right_panel_window_position := im.Vec2{third_w, 0}
+		// right_panel_window_size := im.Vec2{right_w, top_h}
+		// if all_files_scan_done {
+		// 	ui.top_right_panel(
+		// 		audio_state,
+		// 		right_panel_window_position,
+		// 		right_panel_window_size,
+		// 		&search_buffer,
+		// 	)
+		// }
 
-		// // ==================== Bottom ====================
-		ui.bottom_panel(app.g_app, audio_state,  top_h, screen_w, third_h)
+		// // // ==================== Bottom ====================
+		// ui.bottom_panel(audio_state, top_h, screen_w, third_h)
+		ui.render_ui(&library, audio_state)
 
 		im.Render()
 		display_w, display_h := glfw.GetFramebufferSize(window)
@@ -309,34 +260,34 @@ main :: proc() {
 
 	// kill threads
 	// At the end of main, before cleanup
-	if all_files_scan_done {
-		thread.destroy(scan_all_songs_thread)
-	} else {
-		panic("All files thread did not manage to finish")
-	}
-	if all_playlists_scan_done {
-		thread.destroy(scan_playlists_thread)
-	} else {
-		panic("Playlists thread did not manage to finish")
-	}
+	// if all_files_scan_done {
+	// 	thread.destroy(scan_all_songs_thread)
+	// } else {
+	// 	panic("All files thread did not manage to finish")
+	// }
+	// if all_playlists_scan_done {
+	// 	thread.destroy(scan_playlists_thread)
+	// } else {
+	// 	panic("Playlists thread did not manage to finish")
+	// }
 
 	// these two threads may not execute and will be nil
-	if app.g_app.library.search_thread != nil {
-		thread.destroy(app.g_app.library.search_thread)
-		log.info("Killed search thread")
-	}
-	if app.g_app.library.playlist_thread != nil {
-		thread.destroy(app.g_app.library.playlist_thread)
-		log.info("Killed playlist thread")
-	}
-
+	// if app.g_app.library.search_thread != nil {
+	// 	thread.destroy(app.g_app.library.search_thread)
+	// 	log.info("Killed search thread")
+	// }
+	// if app.g_app.library.playlist_thread != nil {
+	// 	thread.destroy(app.g_app.library.playlist_thread)
+	// 	log.info("Killed playlist thread")
+	// }
+	media.destroy_library(&library)
 	{
 		delete_dynamic_array(app.g_app.clicked_playlist_entries)
 		delete_dynamic_array(app.g_app.clicked_search_results_entries)
 		delete_dynamic_array(app.g_app.play_queue)
 		delete(app.g_app.arena.data)
 		log.info("Deleting dynamic arrays")
-		media.delete_library(&app.g_app.library)
+		// media.delete_library(&app.g_app.library)
 		free(app.g_app)
 		log.info("Freed global app")
 	}

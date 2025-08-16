@@ -3,8 +3,6 @@ package ui
 import "core:log"
 
 import im "../../odin-imgui"
-import "../../odin-imgui/imgui_impl_glfw"
-import "../../odin-imgui/imgui_impl_opengl3"
 import media "../media"
 import "core:fmt"
 import "core:os"
@@ -58,11 +56,12 @@ color_vec4_to_u32 :: proc(c: Vec4) -> u32 {
 
 
 top_left_panel :: proc(
-	search_buffer: ^[256]u8,
-	search_results: ^[dynamic]media.SearchItem,
+	library: ^media.MediaLibrary,
+	// search_results: ^[dynamic]media.SearchItem,
 	audio_state: ^audio.AudioState,
 	window_size: im.Vec2,
 ) {
+	using app
 	root := "C:/Users/St.Klue/Music"
 
 	if im.Begin("##top-left", nil, {.NoTitleBar, .NoResize, .NoBackground, .NoScrollbar}) {
@@ -75,18 +74,18 @@ top_left_panel :: proc(
 		im.SameLine()
 		bar_size := im.Vec2{size.x - offset_x, 40} // includes padding space
 		// draw_search_bar("##search-bar", query_buffer, bar_size)
-		draw_search_bar(search_buffer, bar_size)
-		search_cstring := transmute(cstring)search_buffer
+		draw_search_bar(&g_app.search_buffer_query, bar_size)
+		search_cstring := transmute(cstring)(&g_app.search_buffer_query)
 		if im.IsItemEdited() {
-			if app.g_app.library.search_thread != nil {
-				thread.destroy(app.g_app.library.search_thread)
+			if library.search_thread != nil {
+				thread.destroy(library.search_thread)
 			}
 			// fmt.tprint(cast(cstring)(&query_buffer[0])),
-			app.g_app.library.search_thread = thread.create_and_start_with_poly_data4(
-				app.g_app,
+			library.search_thread = thread.create_and_start_with_poly_data4(
+				g_app,
 				strings.clone_from_cstring(search_cstring, app.g_app.arena_allocator),
-				&app.g_app.library.songs,
-				search_results,
+				&library.songs,
+				&g_app.search_results,
 				app.search_song,
 			)
 		}
@@ -107,7 +106,7 @@ top_left_panel :: proc(
 			if draw_custom_button("All Songs", {}, {size.x - offset_x, 30}, {10, 10}) {
 				using app
 				clear(&g_app.play_queue)
-				append(&g_app.play_queue, ..g_app.library.songs[:])
+				append(&g_app.play_queue, ..library.songs[:])
 				g_app.ui_view = .All_Songs
 				g_app.last_view = .All_Songs
 			}
@@ -116,8 +115,8 @@ top_left_panel :: proc(
 
 			// draw playlists
 			if len(search_cstring) == 0 {
-				for v, i in app.g_app.library.playlists {
-					currently_selected := app.g_app.library.playlist_index == i
+				for v, i in library.playlists {
+					currently_selected := g_app.playlist_song_index == i
 					if draw_item_selectable(
 						fmt.ctprint(v.meta.title),
 						currently_selected,
@@ -125,26 +124,25 @@ top_left_panel :: proc(
 						{size.x - offset_x, 30},
 						{10, 10},
 					) {
-						app.g_app.library.playlist_index = i
+						g_app.playlist_song_index = i
 						app.g_app.ui_view = .Playlist
 						app.g_app.last_view = .Playlist
 						// destroy thread first if it was already created
-						if app.g_app.library.playlist_thread != nil {
-							thread.destroy(app.g_app.library.playlist_thread)
+						if library.playlist_thread != nil {
+							thread.destroy(library.playlist_thread)
 						}
-						app.g_app.library.playlist_thread =
-							thread.create_and_start_with_poly_data3(
-								&app.g_app.mutex,
-								&app.g_app.library.playlists[i],
-								&app.g_app.clicked_playlist_entries,
-								media.scan_playlist_entries,
-							)
+						library.playlists_thread = thread.create_and_start_with_poly_data3(
+							&app.g_app.mutex,
+							&library.playlists[i],
+							&app.g_app.clicked_playlist_entries,
+							media.scan_playlist_entries,
+						)
 					}
 				}
 			} else {
 				// drawing search results
-				if len(search_results) > 0 && len(search_results) < 100 {
-					for search_result, i in search_results {
+				if len(g_app.search_results) > 0 && len(g_app.search_results) < 100 {
+					for search_result, i in g_app.search_results {
 						currently_selected := app.g_app.search_result_index == i
 						if draw_selectable_search_item(
 							search_result.label,
@@ -161,21 +159,21 @@ top_left_panel :: proc(
 							case .Title:
 								clear(&app.g_app.clicked_search_results_entries)
 								app.search_one_song(
-									&app.g_app.library.songs,
+									&library.songs,
 									search_result.file_name,
 									&app.g_app.clicked_search_results_entries,
 								)
 							case .Album:
 								clear(&app.g_app.clicked_search_results_entries)
 								app.search_album(
-									&app.g_app.library.songs,
+									&library.songs,
 									search_result.file_name,
 									&app.g_app.clicked_search_results_entries,
 								)
 							case .Artist:
 								clear(&app.g_app.clicked_search_results_entries)
 								app.search_artist(
-									&app.g_app.library.songs,
+									&library.songs,
 									search_result.file_name,
 									&app.g_app.clicked_search_results_entries,
 								)
@@ -191,11 +189,14 @@ top_left_panel :: proc(
 	im.End()
 }
 top_right_panel :: proc(
+	library: ^media.MediaLibrary,
 	audio_state: ^audio.AudioState,
 	window_position: im.Vec2,
 	window_size: im.Vec2,
-	search_buffer: ^[256]byte,
+	// search_buffer: ^[256]byte,
 ) {
+	using app
+
 	im.SetNextWindowPos(window_position)
 	im.SetNextWindowSize(window_size)
 	style := im.GetStyle()
@@ -203,13 +204,12 @@ top_right_panel :: proc(
 	defer style.FramePadding = old_padding // Restore after the frame
 
 	style.FramePadding = 16
-	search_cstring := transmute(cstring)search_buffer
+	search_cstring := transmute(cstring)(&g_app.search_buffer_query)
 	if im.Begin(
 		"##right-panel-header",
 		nil,
 		{.NoResize, .NoCollapse, .NoTitleBar, .NoBackground},
 	) {
-		using app
 		title: cstring
 
 		switch g_app.ui_view {
@@ -218,7 +218,7 @@ top_right_panel :: proc(
 		case .Search:
 			title = text(fmt.tprint("Search results for", search_cstring))
 		case .Playlist:
-			title = text(g_app.library.playlists[g_app.library.playlist_index].meta.title)
+			title = text(library.playlists[g_app.playlists_index].meta.title)
 		case .Visualizer:
 			#partial switch g_app.last_view {
 			case .All_Songs:
@@ -226,7 +226,7 @@ top_right_panel :: proc(
 			case .Search:
 				title = text(fmt.tprint("Search results for", search_cstring))
 			case .Playlist:
-				title = text(g_app.library.playlists[g_app.library.playlist_index].meta.title)
+				title = text(library.playlists[g_app.playlists_index].meta.title)
 			}
 		}
 
@@ -246,7 +246,7 @@ top_right_panel :: proc(
 			pos := im.GetCursorScreenPos()
 			render_audio_visualizer(audio_state, pos, size)
 		case .All_Songs:
-			draw_all_songs(&g_app.library.songs, audio_state, size)
+			draw_all_songs(&library.songs, audio_state, size)
 		case .Search:
 			draw_search_results_clicked(audio_state, size)
 		case .Playlist:
@@ -307,10 +307,11 @@ draw_icon_button :: proc(icon: cstring, font: ^im.Font) {
 
 
 bottom_panel :: proc(
-	app_state: ^app.AppState,
+	library: ^media.MediaLibrary,
 	audio_state: ^audio.AudioState,
 	top_h, screen_w, third_h: f32,
 ) {
+	using app
 	im.SetNextWindowPos(im.Vec2{0, top_h})
 	im.SetNextWindowSize(im.Vec2{screen_w, third_h})
 	if im.Begin("##bottom", nil, {.NoTitleBar, .NoResize, .NoBackground}) {
@@ -322,7 +323,7 @@ bottom_panel :: proc(
 		spacing := im.GetStyle().ItemSpacing.x
 		frame_padding_x := im.GetStyle().FramePadding.x
 		avail_width := im.GetContentRegionAvail().x
-		im.PushFont(app.g_app.prev_and_next_icon_font)
+		im.PushFont(g_app.icon_font_md)
 		prev_size := im.CalcTextSize(ICON_BUTTON_PREV).x + 2 * frame_padding_x
 		next_size := im.CalcTextSize(ICON_BUTTON_NEXT).x + 2 * frame_padding_x
 		stop_size := im.CalcTextSize(ICON_BUTTON_STOP).x + 2 * frame_padding_x
@@ -332,7 +333,7 @@ bottom_panel :: proc(
 		repeat_size := math.max(repeat_all_size, math.max(one_size, no_repeat_size))
 		im.PopFont()
 
-		im.PushFont(app.g_app.play_and_pause_icon_font)
+		im.PushFont(g_app.icon_font_lg)
 		play_size := im.CalcTextSize(ICON_BUTTON_PLAY).x + 2 * frame_padding_x
 		pause_size := im.CalcTextSize(ICON_BUTTON_PAUSE).x + 2 * frame_padding_x
 		play_button_size := math.max(play_size, pause_size)
@@ -353,7 +354,7 @@ bottom_panel :: proc(
 
 			// Left column: song details
 			im.TableSetColumnIndex(0)
-			if len(app_state.play_queue) > 0 {
+			if len(g_app.play_queue) > 0 {
 				left_margin: f32 = 40.0
 				im.SetCursorPosX(im.GetCursorPosX() + left_margin)
 				im.PushStyleColor(im.Col.Text, color_vec4_to_u32({0.8, 0.82, 0.9, 0.5}))
@@ -370,13 +371,13 @@ bottom_panel :: proc(
 			}
 
 			im.TableSetColumnIndex(1)
-			if len(app_state.play_queue) > 0 {
+			if len(g_app.play_queue) > 0 {
 				left_margin: f32 = 20.0
 				im.SetCursorPosX(im.GetCursorPosX() + left_margin)
-				im.Text(app_state.play_queue[app_state.play_queue_index].metadata.title)
+				im.Text(g_app.play_queue[g_app.play_queue_index].metadata.title)
 				im.Dummy({10, 0})
 				im.SetCursorPosX(im.GetCursorPosX() + left_margin)
-				im.Text(app_state.play_queue[app_state.play_queue_index].metadata.artist)
+				im.Text(g_app.play_queue[g_app.play_queue_index].metadata.artist)
 			}
 
 			// Center column: buttons
@@ -387,7 +388,7 @@ bottom_panel :: proc(
 			im.PushStyleColor(im.Col.Text, color_vec4_to_u32({0.8, 0.8, 0.8, 0.8}))
 			im.PushStyleVar(.FrameRounding, 6.0)
 			im.PushStyleVarImVec2(.FramePadding, im.Vec2{4, 4}) // X, Y padding
-			im.PushFont(app.g_app.prev_and_next_icon_font)
+			im.PushFont(g_app.icon_font_md)
 
 			right_margin: f32 = 100.0
 			im.SetCursorPosX(im.GetCursorPosX() + right_margin)
@@ -395,19 +396,18 @@ bottom_panel :: proc(
 			last_cursor_pos_y := im.GetCursorPosY()
 			im.SetCursorPosY(last_cursor_pos_y + default_album_text_size / 8)
 			if im.Button(ICON_BUTTON_PREV) {
-				prev_path_index :=
-					app_state.play_queue_index - 1 >= 0 ? app_state.play_queue_index - 1 : 0
-				audio.update_path(audio_state, app_state.all_songs[prev_path_index].fullpath)
+				prev_path_index := g_app.play_queue_index - 1 >= 0 ? g_app.play_queue_index - 1 : 0
+				audio.update_path(audio_state, library.songs[prev_path_index].fullpath)
 				audio.create_audio_play_thread(audio_state)
-				sync.mutex_lock(&app_state.mutex)
-				app_state.play_queue_index = prev_path_index
-				sync.mutex_unlock(&app_state.mutex)
+				sync.mutex_lock(&g_app.mutex)
+				g_app.play_queue_index = prev_path_index
+				sync.mutex_unlock(&g_app.mutex)
 			}
 			im.PopFont()
 			im.SameLine()
 
 			im.SetCursorPosY(last_cursor_pos_y)
-			im.PushFont(app.g_app.play_and_pause_icon_font)
+			im.PushFont(g_app.icon_font_xl)
 			if im.Button(audio_state.is_playing ? ICON_BUTTON_PAUSE : ICON_BUTTON_PLAY) {
 				audio.toggle_playback(audio_state)
 			}
@@ -416,15 +416,15 @@ bottom_panel :: proc(
 			im.SameLine()
 
 			// Next button
-			im.PushFont(app.g_app.prev_and_next_icon_font)
+			im.PushFont(g_app.icon_font_md)
 			if im.Button(ICON_BUTTON_NEXT) {
 				next_path_index :=
-					app_state.play_queue_index + 1 >= len(app_state.all_songs) ? app_state.play_queue_index : app_state.play_queue_index + 1
-				audio.update_path(audio_state, app_state.all_songs[next_path_index].fullpath)
+					g_app.play_queue_index + 1 >= len(library.songs) ? g_app.play_queue_index : g_app.play_queue_index + 1
+				audio.update_path(audio_state, library.songs[next_path_index].fullpath)
 				audio.create_audio_play_thread(audio_state)
-				sync.mutex_lock(&app_state.mutex)
-				app_state.play_queue_index = next_path_index
-				sync.mutex_unlock(&app_state.mutex)
+				sync.mutex_lock(&g_app.mutex)
+				g_app.play_queue_index = next_path_index
+				sync.mutex_unlock(&g_app.mutex)
 			}
 			im.SameLine()
 

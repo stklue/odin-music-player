@@ -1,33 +1,48 @@
 package media
 import "core:encoding/xml"
+import "core:fmt"
 import "core:log"
+import "core:mem"
 import "core:os"
 import "core:strings"
 import "core:sync"
 import "core:thread"
 import "core:time"
-import "core:unicode/utf16"
-import "core:unicode/utf8"
-
+// import "core:unicode/utf16"
+// import "core:unicode/utf8"
 
 MediaLibrary :: struct {
 	arena:           mem.Arena,
-	songs:           Songs,
+	arena_allocator: mem.Allocator,
+	songs:           Songs, // all songs in ../Music folder
+	songs_mutex:     sync.Mutex,
+	songs_done:      bool, // finished fething the songs
+	songs_thread:    ^thread.Thread,
 	playlists:       [dynamic]Playlist,
-	playlist_index:                 int, // index into library playlists
+	playlists_mutex: sync.Mutex,
+	playlists_done:  bool, // finished fething the playlists
+	playlists_thread: ^thread.Thread,
+	playlist:       [dynamic]Playlist,
+	playlist_mutex: sync.Mutex,
+	playlist_done:  bool, // finished fething the playlist
 	playlist_thread: ^thread.Thread,
 	search_thread:   ^thread.Thread,
-	arena_allocator: mem.Allocator,
 }
 
+TOTAL_SONGS_ON_SYSTEM :: 3000
+// init library data
 init_library :: proc(library: ^MediaLibrary) {
 	arena_mem := make([]byte, 1 * mem.Megabyte)
 	mem.arena_init(&library.arena, arena_mem)
 	library.arena_allocator = mem.arena_allocator(&library.arena)
-	library.songs = make(Songs, 0, 3000)
+	library.songs = make(Songs, 0, TOTAL_SONGS_ON_SYSTEM)
 }
 
-delete_library :: proc(library: ^MediaLibrary) {
+// cleanup library data
+destroy_library :: proc(library: ^MediaLibrary) {
+	if library.songs_thread != nil {thread.destroy(library.songs_thread)} 
+	if library.playlists_thread != nil {thread.destroy(library.playlists_thread)}
+	if library.search_thread != nil {thread.destroy(library.search_thread)}
 	delete_dynamic_array(library.songs)
 	delete(library.arena.data)
 	log.info("Deleted media library data")
@@ -61,10 +76,6 @@ Metadata :: struct {
 	// duration: cstring,
 }
 
-import "core:fmt"
-import "core:sys/windows"
-
-
 MediaKind :: enum {
 	Title,
 	Album,
@@ -93,9 +104,8 @@ import "core:text/scanner"
 // Loads all songs into all_songs
 scan_all_files :: proc(
 	library: ^MediaLibrary,
-	all_songs_mutex: ^sync.Mutex,
-	// all_songs: ^Songs,
-	all_files_scan_done: ^bool,
+	// all_songs_mutex: ^sync.Mutex,
+	// all_files_scan_done: ^bool,
 ) {
 	stop_watch: time.Stopwatch
 	time.stopwatch_start(&stop_watch)
@@ -106,7 +116,7 @@ scan_all_files :: proc(
 	data, ok := os.read_entire_file(metadata_file, context.temp_allocator)
 	defer free_all(context.temp_allocator)
 	if !ok {
-		fmt.eprintln("Unable to read file", metadata_file)
+		log.error("Unable to read file", metadata_file)
 		return
 	}
 
@@ -140,7 +150,7 @@ scan_all_files :: proc(
 		}
 	}
 	time.stopwatch_stop(&scanner_watch)
-	fmt.printfln("Scanning processs took %v", scanner_watch._accumulation)
+	log.infof("Scanning processs took %v\n", scanner_watch._accumulation)
 
 	// Process last line if it wasn't terminated with newline
 	if strings.builder_len(current_line) > 0 {
@@ -151,14 +161,14 @@ scan_all_files :: proc(
 	strings.builder_destroy(&current_line)
 
 	// Bulk transfer to shared collection
-	sync.mutex_lock(all_songs_mutex)
+	sync.mutex_lock(&library.songs_mutex)
 	// reserve(all_songs, len(temp_songs))
 	append(&library.songs, ..temp_songs[:])
-	all_files_scan_done^ = true
-	sync.mutex_unlock(all_songs_mutex)
+	library.songs_done = true
+	sync.mutex_unlock(&library.songs_mutex)
 
 	time.stopwatch_stop(&stop_watch)
-	fmt.printfln("Processed %d files in %v", len(temp_songs), stop_watch._accumulation)
+	log.infof("Processed %d files in %v\n", len(temp_songs), stop_watch._accumulation)
 }
 
 time_proc :: proc(message: string, run: proc()) {
@@ -166,7 +176,7 @@ time_proc :: proc(message: string, run: proc()) {
 	time.stopwatch_start(&sw)
 	run()
 	time.stopwatch_stop(&sw)
-	fmt.printfln("%s %v", message, sw._accumulation)
+	log.infof("%s %v", message, sw._accumulation)
 }
 
 process_line :: proc(library: ^MediaLibrary, line: ^string, songs: ^[dynamic]Song) {
@@ -186,7 +196,7 @@ process_line :: proc(library: ^MediaLibrary, line: ^string, songs: ^[dynamic]Son
 	if count < 2 do return // Invalid line format
 
 	// Build path efficiently
-	path := fmt.tprintf("%s/%s", parts[0], parts[1])
+	path := fmt.tprint("%s/%s", parts[0], parts[1])
 
 	// TODO: if this is stil needed can scedule in a different thread
 	// resulted in 94% of time spend, so approximately 940ms for 1s run
@@ -394,10 +404,11 @@ scan_zpl_playlist :: proc(path: string) -> (playlist: Playlist, ok: bool) {
 	return playlist_res, true
 }
 
+// fetches all the playlists in the Playlists Folder
 scan_all_playlists :: proc(
 	library: ^MediaLibrary,
-	all_playlists_mutex: ^sync.Mutex,
-	all_playlists_scan_done: ^bool,
+	// all_playlists_mutex: ^sync.Mutex,
+	// all_playlists_scan_done: ^bool,
 ) {
 	stop_watch: time.Stopwatch
 	time.stopwatch_start(&stop_watch)
@@ -412,7 +423,7 @@ scan_all_playlists :: proc(
 	if read_err != nil {
 		log.error("Failed to read directory:", folder_path)
 	}
-	sync.mutex_lock(all_playlists_mutex)
+	sync.mutex_lock(&library.playlists_mutex)
 	for file in files {
 		if !file.is_dir && strings.has_suffix(file.name, ".zpl") {
 			// full_path := path.join(folder_path, file.name)
@@ -422,10 +433,10 @@ scan_all_playlists :: proc(
 			}
 		}
 	}
-	all_playlists_scan_done^ = true
-	sync.mutex_unlock(all_playlists_mutex)
+	library.playlists_done = true
+	sync.mutex_unlock(&library.playlists_mutex)
 	time.stopwatch_stop(&stop_watch)
-	fmt.printfln(
+	log.infof(
 		"Playlists (.zpl) %d/%d scanned in %v",
 		len(library.playlists),
 		len(files),
@@ -483,7 +494,14 @@ scan_playlist_entries :: proc(
 	)
 }
 
+// creates a thread that will search filesystem in Music folder
+// For windows: C:\Users\User_Name\Music
+create_and_start_scan_all_songs_thread :: proc(library: ^MediaLibrary) {
+	library.songs_thread = thread.create_and_start_with_poly_data(library, scan_all_files)
+}
 
-import taglib "../../taglib-odin"
-import "core:mem"
-import image "vendor:stb/image"
+// creates a thread that will search filesystem in Playlists folder
+// For windows: C:\Users\User_Name\Music\Playlists
+create_and_start_scan_playlists_thread :: proc(library: ^MediaLibrary) {
+	library.playlists_thread = thread.create_and_start_with_poly_data(library, scan_all_playlists)
+}

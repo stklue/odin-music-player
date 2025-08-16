@@ -18,6 +18,7 @@ import "core:sync"
 import "core:thread"
 import ma "vendor:miniaudio"
 
+
 draw_item_selectable :: proc(
 	label: cstring,
 	selected: bool,
@@ -25,6 +26,8 @@ draw_item_selectable :: proc(
 	size: im.Vec2,
 	padding: im.Vec2,
 ) -> bool {
+	using app
+
 	draw_list := im.GetWindowDrawList()
 	pos := im.GetCursorScreenPos()
 	im.DrawList_ChannelsSplit(draw_list, 2)
@@ -59,7 +62,7 @@ draw_item_selectable :: proc(
 	im.DrawList_AddRectFilled(draw_list, min, max, color, rounding)
 	im.DrawList_AddRectFilled(draw_list, min, max, color, rounding)
 	icon_font_color := [4]f32{0.8, 0.8, 0.8, 0.8}
-	im.PushFont(app.g_app.search_item_icon_font)
+	im.PushFont(g_app.icon_font_md)
 	font_size: im.Vec2
 	font_pos: im.Vec2
 
@@ -93,6 +96,7 @@ draw_selectable_search_item :: proc(
 	padding: im.Vec2,
 	media_kind: media.MediaKind,
 ) -> bool {
+	using app
 	draw_list := im.GetWindowDrawList()
 	pos := im.GetCursorScreenPos()
 	im.DrawList_ChannelsSplit(draw_list, 2)
@@ -126,7 +130,7 @@ draw_selectable_search_item :: proc(
 
 	im.DrawList_AddRectFilled(draw_list, min, max, color, rounding)
 	icon_font_color := [4]f32{0.8, 0.8, 0.8, 0.8}
-	im.PushFont(app.g_app.search_item_icon_font)
+	im.PushFont(g_app.icon_font_md)
 	font_size: im.Vec2
 	font_pos: im.Vec2
 	switch media_kind {
@@ -449,6 +453,7 @@ draw_information_bar :: proc(
 	return is_clicked
 }
 
+// draws the all songs button
 draw_custom_button :: proc(
 	label: cstring,
 	flags: im.SelectableFlags,
@@ -496,7 +501,7 @@ draw_custom_button :: proc(
 	return is_clicked
 }
 
-
+// draw the search bar on left side of screen
 draw_search_bar :: proc(search_buffer: ^[256]u8, size: im.Vec2) -> bool {
 	// draw_search_bar :: proc(id: string, buffer: cstring, size: im.Vec2) -> bool {
 	if search_buffer == nil {

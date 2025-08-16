@@ -16,18 +16,19 @@ import "core:time"
 AppState :: struct {
 	mutex:                          sync.Mutex,
 	is_searching:                   bool,
-	search_result_index:            int,
-	all_songs:                      media.Songs,
+	search_result_index:            int, // index to what search result is clicked
 	total_files:                    int,
 	taglib_total_duration:          time.Duration,
 	taglib_file_count:              int,
+	
 	clicked_playlist_entries:       media.Songs, // stores the playlist entries that was clicked on 
 	clicked_search_results_entries: media.Songs, // stores the search result entries that was clicked
 	play_queue:                     media.Songs, // stores the songs that's currently in line to play
 	play_queue_index:               int,
+	
 	ui_view:                        UI_View, // stores the UI on the right panel to show
 	last_view:                      UI_View, // when switching to the visualizer and back
-	library:                        media.MediaLibrary, // manages all the songs
+	// library:                        media.MediaLibrary, // manages all the songs
 	arena:                          mem.Arena, // for app cstrings allocations
 	arena_allocator:                mem.Allocator, // storing cstrings
 	has_right_clicked:              bool, // whether the mouse right was click
@@ -36,13 +37,24 @@ AppState :: struct {
 	ui_layer_interact:              UI_Layer_Interact, // let's us know on which layer we should handle clicks and hover
 
 	// fonts
-	application_font:               ^im.Font,
 	header_font:                    ^im.Font,
-	play_and_pause_icon_font:       ^im.Font,
-	prev_and_next_icon_font:        ^im.Font,
-	search_item_icon_font:          ^im.Font,
+	base_font:                    ^im.Font,
 	icon_font_2xl:                  ^im.Font,
-	icon_font_sm:                  ^im.Font,
+	icon_font_sm:                   ^im.Font,
+	icon_font_md:                   ^im.Font,
+	icon_font_lg:                   ^im.Font,
+	icon_font_xl:                   ^im.Font,
+
+
+	// manage indices
+	playlists_index: int, // the index of the clicked playlist
+	playlist_song_index: int, // the index of the song in the clicked playlist
+	all_songs_index: int, // index of song all songs 
+
+
+	// search
+	search_buffer_query: [256]u8, 
+	search_results: [dynamic]media.SearchItem
 }
 
 
@@ -85,7 +97,7 @@ init_app :: proc() -> ^AppState {
 	arena_mem := make([]byte, 1 * mem.Megabyte)
 	mem.arena_init(&state.arena, arena_mem)
 	state.arena_allocator = mem.arena_allocator(&state.arena)
-	media.init_library(&state.library)
+	// media.init_library(&state.library)
 	return state
 }
 // cleanup code in track.odin
@@ -107,6 +119,7 @@ search_song :: proc(
 	// search_time: time.Stopwatch
 	// time.stopwatch_start(&search_time)
 	// Song matches are kept separate
+	
 	for song in songs {
 		title := strings.to_lower(fmt.tprint(song.metadata.title))
 		album := strings.to_lower(fmt.tprint(song.metadata.album))
@@ -210,203 +223,111 @@ is_valid_path :: proc(path: string) -> bool {
 }
 media_extensions :: []string{".mp3"}
 // TODO: To run search_all_files would first have to create the metaadata.txt file and then search that
-search_all_files_archive :: proc(dir: string) {
+// search_all_files_archive :: proc(dir: string) {
 
-	g_app.total_files += 1
-	handler, handle_err := os.open(dir)
-	defer os.close(handler)
-	if handle_err != nil {
-		fmt.eprintln("Failed to open dir: ", dir, handle_err)
-		return
-	}
-	entries, err := os.read_dir(handler, -1)
-	if err != nil {
-		fmt.eprintln("Failed to read dir: ", dir, err)
-		return
-	}
-	for entry in entries {
-		path := strings.join([]string{dir, entry.name}, "/")
+// 	g_app.total_files += 1
+// 	handler, handle_err := os.open(dir)
+// 	defer os.close(handler)
+// 	if handle_err != nil {
+// 		fmt.eprintln("Failed to open dir: ", dir, handle_err)
+// 		return
+// 	}
+// 	entries, err := os.read_dir(handler, -1)
+// 	if err != nil {
+// 		fmt.eprintln("Failed to read dir: ", dir, err)
+// 		return
+// 	}
+// 	for entry in entries {
+// 		path := strings.join([]string{dir, entry.name}, "/")
 
-		item := media.Song {
-			info           = entry,
-			name           = strings.clone_to_cstring(entry.name),
-			fullpath       = strings.clone_to_cstring(entry.fullpath),
-			lowercase_name = strings.to_lower(entry.name),
-			dir            = dir,
-		}
+// 		item := media.Song {
+// 			info           = entry,
+// 			name           = strings.clone_to_cstring(entry.name),
+// 			fullpath       = strings.clone_to_cstring(entry.fullpath),
+// 			lowercase_name = strings.to_lower(entry.name),
+// 			dir            = dir,
+// 		}
 
-		if entry.is_dir {
-			search_all_files_archive(path)
-		} else {
+// 		if entry.is_dir {
+// 			search_all_files_archive(path)
+// 		} else {
 
-			if strings.has_suffix(item.lowercase_name, ".mp3") {
-				path_cstr := fmt.ctprint(path)
-				stop_watch: time.Stopwatch
-				time.stopwatch_start(&stop_watch)
+// 			if strings.has_suffix(item.lowercase_name, ".mp3") {
+// 				path_cstr := fmt.ctprint(path)
+// 				stop_watch: time.Stopwatch
+// 				time.stopwatch_start(&stop_watch)
 
-				// Bottleneck
+// 				// Bottleneck
 
-				file := taglib.file_new(path_cstr)
-				defer taglib.file_free(file) // memory sky rockets when not cleaned up
+// 				file := taglib.file_new(path_cstr)
+// 				defer taglib.file_free(file) // memory sky rockets when not cleaned up
 
-				tag := taglib.file_tag(file)
-				if tag.dummy == 0 {
-					if len(item.name) > 20 {
-						truncated := fmt.tprintf("%.20s...", item.info.name[:20])
-						item.metadata.title = strings.clone_to_cstring(truncated)
-					} else {
-						item.metadata.title = item.name
-					}
+// 				tag := taglib.file_tag(file)
+// 				if tag.dummy == 0 {
+// 					if len(item.name) > 20 {
+// 						truncated := fmt.tprintf("%.20s...", item.info.name[:20])
+// 						item.metadata.title = strings.clone_to_cstring(truncated)
+// 					} else {
+// 						item.metadata.title = item.name
+// 					}
 
-					item.metadata.artist = "Unknown Artist"
-					item.metadata.year = ""
-					item.metadata.album = "Unknown Album"
-					item.metadata.genre = "Unknown Genre"
-					item.valid_metadata = false
+// 					item.metadata.artist = "Unknown Artist"
+// 					item.metadata.year = ""
+// 					item.metadata.album = "Unknown Album"
+// 					item.metadata.genre = "Unknown Genre"
+// 					item.valid_metadata = false
 
-					g_app.taglib_file_count += 1
+// 					g_app.taglib_file_count += 1
 
-					append(&g_app.all_songs, item)
-					continue
-				}
+// 					append(&g_app.all_songs, item)
+// 					continue
+// 				}
 
-				//! CAN FIX: Should be a better way to fix this
-				title := taglib.tag_title(tag)
+// 				//! CAN FIX: Should be a better way to fix this
+// 				title := taglib.tag_title(tag)
 
-				// if len(title) > 0 {
-				// 	if len(title) > 20 {
-				// 		truncated := fmt.tprintf("%.20s...", title)
-				// 		item.metadata.title = strings.clone_to_cstring(truncated)
+// 				// if len(title) > 0 {
+// 				// 	if len(title) > 20 {
+// 				// 		truncated := fmt.tprintf("%.20s...", title)
+// 				// 		item.metadata.title = strings.clone_to_cstring(truncated)
 
-				// 	} else {
-				// 		item.metadata.title = title
-				// 	}
-				// } else {
-				// 	//  use the filename as the title
-				// 	if len(item.name) > 20 {
-				// 		truncated := fmt.tprintf("%.20s...", item.name)
-				// 		item.metadata.title = strings.clone_to_cstring(truncated)
-				// 	} else {
-				// 		item.metadata.title = item.name
-				// 	}
-				// }
-				item.metadata.title =
-					len(title) > 0 ? title : strings.clone_to_cstring(item.info.name)
+// 				// 	} else {
+// 				// 		item.metadata.title = title
+// 				// 	}
+// 				// } else {
+// 				// 	//  use the filename as the title
+// 				// 	if len(item.name) > 20 {
+// 				// 		truncated := fmt.tprintf("%.20s...", item.name)
+// 				// 		item.metadata.title = strings.clone_to_cstring(truncated)
+// 				// 	} else {
+// 				// 		item.metadata.title = item.name
+// 				// 	}
+// 				// }
+// 				item.metadata.title =
+// 					len(title) > 0 ? title : strings.clone_to_cstring(item.info.name)
 
-				item.metadata.artist =
-					len(taglib.tag_artist(tag)) > 0 ? taglib.tag_artist(tag) : "Unknown Artist"
-				item.metadata.year = strings.clone_to_cstring(
-					fmt.tprintf("%d", taglib.tag_year(tag)),
-				)
-				item.metadata.album =
-					len(taglib.tag_album(tag)) > 0 ? taglib.tag_album(tag) : "Unknown Album"
-				item.metadata.genre =
-					len(taglib.tag_genre(tag)) > 0 ? taglib.tag_genre(tag) : "Unknown Genre"
-				item.valid_metadata = true
+// 				item.metadata.artist =
+// 					len(taglib.tag_artist(tag)) > 0 ? taglib.tag_artist(tag) : "Unknown Artist"
+// 				item.metadata.year = strings.clone_to_cstring(
+// 					fmt.tprintf("%d", taglib.tag_year(tag)),
+// 				)
+// 				item.metadata.album =
+// 					len(taglib.tag_album(tag)) > 0 ? taglib.tag_album(tag) : "Unknown Album"
+// 				item.metadata.genre =
+// 					len(taglib.tag_genre(tag)) > 0 ? taglib.tag_genre(tag) : "Unknown Genre"
+// 				item.valid_metadata = true
 
-				time.stopwatch_stop(&stop_watch)
-				duration := stop_watch._accumulation
+// 				time.stopwatch_stop(&stop_watch)
+// 				duration := stop_watch._accumulation
 
-				g_app.taglib_total_duration += duration
-				g_app.taglib_file_count += 1
+// 				g_app.taglib_total_duration += duration
+// 				g_app.taglib_file_count += 1
 
-				append(&g_app.all_songs, item)
-			}
-		}
-	}
-}
-
-scan_all_files :: proc(root: string) {
-	metadata_file := "C:/Users/St.Klue/Music/metadata.txt"
-
-	// Check if metadata file exists first
-	if !os.exists(metadata_file) {
-		fmt.eprintln("Metadata file does not exist:", metadata_file)
-		return
-	}
-
-	bytes_read, read_error := os.read_entire_file_from_filename_or_err(metadata_file)
-	if read_error != nil {
-		fmt.eprintln("Unable to read file", metadata_file, read_error)
-		return
-	}
-
-	content := string(bytes_read)
-	lines := strings.split_lines(content)
-
-	for line in lines {
-		g_app.total_files += 1
-		// Skip empty lines
-		if strings.trim_space(line) == "" do continue
-
-		// fmt.println(line)
-		res, alloc_err := strings.split(line, "=x=")
-		if alloc_err != nil {
-			fmt.println("Allocator error for string split", alloc_err)
-			return
-		}
-
-		// fmt.println("Result: ", res)
-		if len(res) == 1 {
-			// end of files reached
-			continue
-		}
-		// Check if we have enough parts
-		if len(res) < 2 {
-			fmt.println("Invalid line format (not enough parts):", line)
-			continue
-		}
-
-		// Use filepath.join for proper path construction
-		path := strings.join([]string{res[0], res[1]}, "/")
-
-		// Check if file exists before trying to open it
-		if !os.exists(path) {
-			fmt.println("File does not exist:", path)
-			continue
-		}
-
-		handler, handler_err := os.open(path, os.O_RDONLY)
-		if handler_err != nil {
-			fmt.println("Error opening file", path, handler_err)
-			continue // Don't return, just skip this file
-		}
-		defer os.close(handler) // Important: close the file handle
-
-		file_info, read_err := os.fstat(handler)
-		if read_err != nil {
-			fmt.println("Error getting file info", path, read_err)
-			continue
-		}
-		new_path, _ := strings.replace_all(path, "/", "\\")
-		// fmt.println("This is the new path: ", new_path)
-		item := media.Song {
-			info           = file_info,
-			name           = strings.clone_to_cstring(res[1]),
-			fullpath       = strings.clone_to_cstring(file_info.fullpath),
-			lowercase_name = strings.to_lower(res[1]),
-			dir            = new_path,
-		}
-
-		// Check if we have enough metadata fields
-		if len(res) >= 7 {
-			item.metadata.title = strings.clone_to_cstring(res[2])
-			item.metadata.artist = strings.clone_to_cstring(res[3])
-			item.metadata.album = strings.clone_to_cstring(res[4])
-			item.metadata.year = strings.clone_to_cstring(res[5])
-			item.metadata.genre = strings.clone_to_cstring(res[6])
-		} else {
-			fmt.println("Warning: incomplete metadata for", path)
-		}
-
-		item.valid_metadata = false
-
-		g_app.taglib_file_count += 1
-
-		append(&g_app.all_songs, item)
-	}
-	return
-}
+// 				append(&g_app.all_songs, item)
+// 			}
+// 		}
+// 	}
+// }
 
 // Writes the metadata to a textfile and then return the number of files/item written
 // path, title, artist, album, genre, year, duration
@@ -450,226 +371,6 @@ write_metadata_to_txt :: proc(files: media.Songs) -> os.Error {
 }
 
 
-// Work item for threading - represents a file to process
-Work_Item :: struct {
-	file_path: string,
-	file_info: os.File_Info,
-	directory: string,
-}
-
-// Shared data structure for threads
-Shared_Data :: struct {
-	work_queue:    [dynamic]Work_Item,
-	results:       media.Songs,
-	queue_mutex:   sync.Mutex,
-	results_mutex: sync.Mutex,
-	completed:     bool,
-}
-
-// Collect all MP3 files recursively first (single-threaded)
-collect_mp3_files :: proc(work_queue: ^[dynamic]Work_Item, dir: string) {
-	handler, handle_err := os.open(dir)
-	if handle_err != nil {
-		fmt.printf("Failed to open dir: %s\n", dir)
-		return
-	}
-	defer os.close(handler)
-
-	entries, err := os.read_dir(handler, -1) // Read all entries at once
-	if err != nil {
-		fmt.printf("Failed to read dir: %s\n", dir)
-		return
-	}
-
-	for entry in entries {
-		if entry.is_dir {
-			path := strings.join([]string{dir, entry.name}, "/")
-			collect_mp3_files(work_queue, path) // Recursively collect
-		} else if strings.has_suffix(strings.to_lower(entry.name), ".mp3") {
-			work_item := Work_Item {
-				file_path = strings.clone(entry.fullpath),
-				file_info = entry,
-				directory = strings.clone(dir),
-			}
-			append(work_queue, work_item)
-		}
-	}
-}
-
-// Thread worker procedure - processes MP3 files
-process_mp3_worker :: proc(shared_data: ^Shared_Data, thread_id: int) {
-	processed_count := 0
-
-	for {
-		// Get work item from queue
-		sync.mutex_lock(&shared_data.queue_mutex)
-		work_item, has_work := pop_front_safe(&shared_data.work_queue)
-		queue_empty := len(shared_data.work_queue) == 0
-		sync.mutex_unlock(&shared_data.queue_mutex)
-
-		if !has_work {
-			if queue_empty {
-				break // No more work to do
-			}
-			continue
-		}
-
-		// Process the MP3 file
-		file_entry := process_single_mp3(work_item)
-
-
-		// Add result to shared results
-		sync.mutex_lock(&shared_data.results_mutex)
-		append(&shared_data.results, file_entry)
-		sync.mutex_unlock(&shared_data.results_mutex)
-
-		processed_count += 1
-
-		// Optional: Print progress
-		// if processed_count % 50 == 0 {
-		// 	fmt.printf("[THREAD %02d] Processed %d files\n", thread_id, processed_count)
-		// }
-	}
-
-	// fmt.printf("[THREAD %02d] Finished processing %d files\n", thread_id, processed_count)
-}
-
-// Process a single MP3 file (your existing logic cleaned up)
-process_single_mp3 :: proc(work_item: Work_Item) -> media.Song {
-	entry := work_item.file_info
-
-
-	item := media.Song {
-		info           = entry,
-		name           = fmt.ctprint(entry.name),
-		fullpath       = fmt.ctprint(entry.fullpath),
-		lowercase_name = strings.to_lower(entry.name),
-	}
-
-
-	// check if file path exists
-	if !os.exists(work_item.file_path) {
-		item.valid_metadata = false
-		return item
-	}
-
-
-	// Process with TagLib
-	if !entry.is_dir && strings.has_suffix(entry.name, ".mp3") {
-		file := taglib.file_new(item.fullpath)
-
-		defer taglib.file_free(file) // memory sky rockets when not cleaned up
-
-		// Get the tag information
-		tag := taglib.file_tag(file)
-		if tag.dummy == 0 {
-			if len(item.name) > 20 {
-				truncated := fmt.tprintf("%.20s...", item.info.name[:20])
-				item.metadata.title = fmt.ctprint(truncated)
-			} else {
-				item.metadata.title = item.name
-			}
-
-			item.metadata.artist = "Unknown Artist"
-			item.metadata.year = ""
-			item.metadata.album = "Unknown Album"
-			item.metadata.genre = "Unknown Genre"
-			item.valid_metadata = false
-
-			// fmt.println("Weird path but good", tag)
-			return item
-		}
-
-		// Extract metadata efficiently
-		extract_metadata(&item, tag)
-		// fmt.println("Extract finished: ")
-
-		// taglib.tag_free_strings()
-		return item
-	}
-
-	// fmt.println("Weird path: ", item.fullpath)
-	return item
-}
-
-// Main threaded search function
-search_all_files_threaded :: proc(all_paths: ^media.Songs, dir: string, num_threads: int = 8) {
-	start_time := time.now()
-
-	// Initialize shared data
-	shared_data := Shared_Data {
-		work_queue = make([dynamic]Work_Item, 0, 3000), // Pre-allocate for ~3000 files
-		results    = make(media.Songs, 0, 3000),
-	}
-	defer {
-		// Clean up work queue
-		for work_item in shared_data.work_queue {
-			delete(work_item.file_path)
-			delete(work_item.directory)
-		}
-		delete(shared_data.work_queue)
-		delete(shared_data.results)
-	}
-
-	// Phase 1: Collect all MP3 files (single-threaded for filesystem safety)
-	fmt.println("Phase 1: Collecting MP3 files...")
-	collect_start := time.now()
-	collect_mp3_files(&shared_data.work_queue, dir)
-	collect_time := time.since(collect_start)
-
-	total_files := len(shared_data.work_queue)
-	// fmt.printf("Found %d MP3 files in %v\n", total_files, collect_time)
-
-	if total_files == 0 {
-		fmt.println("No MP3 files found!")
-		return
-	}
-
-	// Phase 2: Process files with multiple threads
-	fmt.printf("Phase 2: Processing files with %d threads...\n", num_threads)
-	process_start := time.now()
-
-	// Create and start threads
-	threads := make([]^thread.Thread, num_threads)
-	defer delete(threads)
-
-	for i in 0 ..< num_threads {
-		thread_id := i + 1
-		threads[i] = thread.create_and_start_with_poly_data2(
-			&shared_data,
-			thread_id,
-			process_mp3_worker,
-		)
-	}
-
-	// Wait for all threads to complete
-	thread.join_multiple(..threads[:])
-
-	// Clean up threads
-	for t in threads {
-		thread.destroy(t)
-	}
-
-	process_time := time.since(process_start)
-
-	// Phase 3: Copy results to output
-	fmt.println("Phase 3: Copying results...")
-	reserve(all_paths, len(all_paths) + len(shared_data.results))
-	for result in shared_data.results {
-		append(all_paths, result)
-	}
-
-	total_time := time.since(start_time)
-	fmt.printf(
-		"Search completed: %d files processed in %v (collect: %v, process: %v)\n",
-		len(shared_data.results),
-		total_time,
-		collect_time,
-		process_time,
-	)
-	fmt.printf("Average processing time per file: %v\n", process_time / time.Duration(total_files))
-}
-
 // Optimized metadata extraction
 extract_metadata :: proc(item: ^media.Song, tag: taglib.TagLib_Tag) {
 	// Title processing
@@ -706,33 +407,51 @@ ICON_MIN_FA :: 0x0005
 ICON_MAX_FA :: 0xFF22
 icons_ranges := [3]im.Wchar{ICON_MIN_FA, ICON_MAX_FA, 0}
 
-load_application_font :: proc(font_atlas: ^im.FontAtlas, font_path: cstring) {
-	g_app.application_font = im.FontAtlas_AddFontFromFileTTF(font_atlas, font_path, 16)
-}
-load_header_font :: proc(font_atlas: ^im.FontAtlas, font_path: cstring) {
-	g_app.application_font = im.FontAtlas_AddFontFromFileTTF(font_atlas, font_path, 30)
-}
-load_play_and_pause_font :: proc(font_atlas: ^im.FontAtlas, font_path: cstring) {
-	g_app.play_and_pause_icon_font = im.FontAtlas_AddFontFromFileTTF(
+load_header_font :: proc(font_atlas: ^im.FontAtlas) {
+	g_app.header_font = im.FontAtlas_AddFontFromFileTTF(
 		font_atlas,
-		font_path,
+		"C:/Projects/track_player/track/fonts/Roboto/static/Roboto_Condensed-Bold.ttf",
 		30,
+	)
+}
+load_base_font :: proc(font_atlas: ^im.FontAtlas) {
+	g_app.base_font = im.FontAtlas_AddFontFromFileTTF(
+		font_atlas,
+		"C:/Projects/track_player/track/fonts/Roboto/static/Roboto_Condensed-Regular.ttf",
+		18,
+	)
+}
+
+
+load_icon_font_sm :: proc(font_atlas: ^im.FontAtlas) {
+	g_app.icon_font_sm = im.FontAtlas_AddFontFromFileTTF(
+		font_atlas,
+		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
+		12,
 		glyph_ranges = raw_data(icons_ranges[:]),
 	)
 }
-load_prev_and_next_font :: proc(font_atlas: ^im.FontAtlas, font_path: cstring) {
-	g_app.prev_and_next_icon_font = im.FontAtlas_AddFontFromFileTTF(
+load_icon_font_md :: proc(font_atlas: ^im.FontAtlas) {
+	g_app.icon_font_md = im.FontAtlas_AddFontFromFileTTF(
 		font_atlas,
-		font_path,
-		15,
-		glyph_ranges = raw_data(icons_ranges[:]),
-	)
-}
-load_search_item_font :: proc(font_atlas: ^im.FontAtlas, font_path: cstring) {
-	g_app.search_item_icon_font = im.FontAtlas_AddFontFromFileTTF(
-		font_atlas,
-		font_path,
+		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
 		14,
+		glyph_ranges = raw_data(icons_ranges[:]),
+	)
+}
+load_icon_font_lg :: proc(font_atlas: ^im.FontAtlas) {
+	g_app.icon_font_lg = im.FontAtlas_AddFontFromFileTTF(
+		font_atlas,
+		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
+		16,
+		glyph_ranges = raw_data(icons_ranges[:]),
+	)
+}
+load_icon_font_xl :: proc(font_atlas: ^im.FontAtlas) {
+	g_app.icon_font_xl = im.FontAtlas_AddFontFromFileTTF(
+		font_atlas,
+		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
+		30,
 		glyph_ranges = raw_data(icons_ranges[:]),
 	)
 }
@@ -744,11 +463,35 @@ load_icon_font_2xl :: proc(font_atlas: ^im.FontAtlas) {
 		glyph_ranges = raw_data(icons_ranges[:]),
 	)
 }
-load_icon_font_sm :: proc(font_atlas: ^im.FontAtlas) {
-	g_app.icon_font_sm = im.FontAtlas_AddFontFromFileTTF(
-		font_atlas,
-		"C:/Projects/track_player/track/fonts/Font Awesome 7 Free-Solid-900.otf",
-		12,
-		glyph_ranges = raw_data(icons_ranges[:]),
-	)
+load_all_fonts :: proc(font: ^im.FontAtlas) {
+	load_base_font(font)
+	load_header_font(font)
+	load_icon_font_2xl(font)
+	load_icon_font_sm(font)
+	load_icon_font_md(font)
+	load_icon_font_lg(font)
+	load_icon_font_xl(font)
+}
+
+App_Events ::  enum {
+	SEARCH_BAR_START , // when the user clicks on the search bar
+	SEARCH_BAR_ENTER, // when the user types in the search bar
+	SEARCH_BAR_LEAVE,
+
+	LEFT_ALL_SONGS_CLICKED,
+	LEFT_PLAYLISTS_ITEM_CLICKED,
+
+	RIGHT_ALL_SONG_ITEM_CLICKED,
+	RIGHT_PLAYLIST_ITEM_CLICKED,
+	RIGHT_SEARCH_ITEM_CLICKED,
+
+	// PLAYBACK EVENTS
+	BOTTOM_PAUSE_CLICKED,
+	BOTTOM_PLAY_CLICKED,
+	BOTTOM_NEXT_CLICKED,
+	BOTTOM_PREV_CLICKED,
+	BOTTOM_REPEAT_ONE_CLICKED,
+	BOTTOM_REPEAT_ALL_CLICKED,
+	BOTTOM_REPEAT_NOTHING_CLICKED,
+
 }
